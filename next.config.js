@@ -1,10 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Permite imágenes de cualquier dominio (necesario para fotos subidas por usuario)
   images: {
     remotePatterns: [
-      { protocol: 'https', hostname: '**' },
+      // Supabase storage (tu proyecto)
+      { protocol: "https", hostname: "lpbzndnavkbpxwnlbqgb.supabase.co" },
+
+      // Si luego usas CDN/otros, los agregas aquí (mejor explícitos)
+      // { protocol: "https", hostname: "cdn.tusitio.com" },
     ],
   },
-}
-module.exports = nextConfig
+};
+
+module.exports = nextConfig;
