@@ -80,7 +80,7 @@ export default function AdminDashboard() {
              <div className="h-10 w-10 bg-unico-600 rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-red-200">U</div>
              <div>
                <h1 className="text-lg font-extrabold text-slate-900 leading-tight">ÚNICO <span className="text-unico-600">OS</span></h1>
-               <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Commander v6.3</p>
+               <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Commander v6.4</p>
              </div>
           </div>
           <button onClick={() => setMobileMenuOpen(false)} className="md:hidden text-slate-400"><X size={24}/></button>
@@ -120,7 +120,7 @@ export default function AdminDashboard() {
             
             <div>
               <h2 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight truncate max-w-[200px] md:max-w-none">
-                {activeTab === 'dashboard' && 'Finanzas Generales'}
+                {activeTab === 'dashboard' && 'Reporte Financiero'}
                 {activeTab === 'marketing' && 'Marketing'}
                 {activeTab === 'orders' && 'Logística'}
                 {activeTab === 'products' && 'Inventario'}
@@ -149,7 +149,7 @@ export default function AdminDashboard() {
   );
 }
 
-// --- VISTA FINANCIERA (70% NETO + DESGLOSE PORCENTAJES) ---
+// --- VISTA FINANCIERA (70% NETO CON ETIQUETA LIMPIA) ---
 function DashboardView({ orgId, setHelp }) {
   const [finance, setFinance] = useState({ gross: 0, stripe: 0, shipping: 0, net70: 0, orders: 0 });
 
@@ -201,6 +201,7 @@ function DashboardView({ orgId, setHelp }) {
           <div className="absolute top-0 right-0 w-64 h-64 bg-unico-600 rounded-full blur-3xl opacity-20 -mr-16 -mt-16"></div>
           <div className="relative z-10">
             <div className="flex justify-between items-start mb-2">
+               {/* ETIQUETA CORREGIDA: Solo dice "UTILIDAD NETA" */}
                <p className="text-slate-400 text-xs md:text-sm font-bold uppercase tracking-widest">UTILIDAD NETA</p>
                <button onClick={() => setHelp("Ganancia líquida libre de costos operativos, comisiones y envíos.")}><HelpCircle className="text-slate-500 hover:text-white"/></button>
             </div>
