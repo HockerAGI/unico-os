@@ -1,29 +1,32 @@
-"use client"; // Importante para hooks
 import { Inter } from 'next/font/google'
-import { useEffect } from 'react'
 
 const inter = Inter({ subsets: ['latin'] })
 
-export default function RootLayout({ children }) {
-  
-  // Auto-registro del Service Worker al abrir la app
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js')
-        .then(reg => console.log('SW registrado:', reg.scope))
-        .catch(err => console.error('SW falló:', err));
-    }
-  }, []);
+export const metadata = {
+  title: 'ÚNICO OS | Commander',
+  description: 'Sistema Operativo Enterprise',
+  manifest: '/manifest.json', // ¡Esto activa la instalación!
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Único OS',
+  },
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false, // Bloquea el zoom para que se sienta como App nativa
+  }
+}
 
+export const viewport = {
+  themeColor: '#E10600',
+}
+
+export default function RootLayout({ children }) {
   return (
     <html lang="es">
       <head>
-        <title>ÚNICO OS | Commander</title>
-        <meta name="description" content="Sistema Operativo Enterprise" />
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#E10600" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <script src="https://cdn.tailwindcss.com"></script>
         <script dangerouslySetInnerHTML={{__html: `
           tailwind.config = {
@@ -37,6 +40,7 @@ export default function RootLayout({ children }) {
             }
           }
         `}} />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body className={`${inter.className} bg-slate-50 text-slate-800 antialiased overflow-hidden select-none`}>
         {children}
