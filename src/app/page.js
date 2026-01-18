@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase';
 import { 
   LayoutDashboard, Package, Settings, ShoppingCart, Truck, 
   LogOut, ChevronDown, Plus, Search, Save, X, HelpCircle, 
-  Info, MessageCircle, Megaphone, Bell, Upload, CheckCircle, DollarSign
+  Info, MessageCircle, Megaphone, Bell, Upload, CheckCircle, 
+  DollarSign, Menu 
 } from 'lucide-react';
 
 export default function AdminDashboard() {
@@ -14,6 +15,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [helpMsg, setHelpMsg] = useState(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -52,18 +54,36 @@ export default function AdminDashboard() {
     if (permission === 'granted') setNotificationsEnabled(true);
   };
 
+  const handleNavClick = (tab) => {
+    setActiveTab(tab);
+    setMobileMenuOpen(false);
+  };
+
   if (loading) return <LoadingScreen />;
   if (!selectedOrg) return <EmptyState />;
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
-      {/* SIDEBAR */}
-      <aside className="w-72 bg-white border-r border-slate-200 hidden md:flex flex-col z-20 shadow-sm relative">
-        <div className="p-6 border-b border-slate-100">
+      
+      {/* SIDEBAR RESPONSIVO */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setMobileMenuOpen(false)}/>
+      )}
+
+      <aside className={`
+        fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 flex flex-col shadow-2xl transition-transform duration-300 ease-in-out
+        md:translate-x-0 md:static md:shadow-sm
+        ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
           <div className="flex items-center gap-3">
              <div className="h-10 w-10 bg-unico-600 rounded-lg flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-red-200">U</div>
-             <div><h1 className="text-lg font-extrabold text-slate-900 leading-tight">ÚNICO <span className="text-unico-600">OS</span></h1><p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Commander v6.1 (70%)</p></div>
+             <div>
+               <h1 className="text-lg font-extrabold text-slate-900 leading-tight">ÚNICO <span className="text-unico-600">OS</span></h1>
+               <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Commander v6.3</p>
+             </div>
           </div>
+          <button onClick={() => setMobileMenuOpen(false)} className="md:hidden text-slate-400"><X size={24}/></button>
         </div>
         
         <div className="px-6 mt-6">
@@ -76,39 +96,46 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <nav className="flex-1 px-4 space-y-2 mt-8">
-          <NavBtn icon={<LayoutDashboard size={20}/>} label="Finanzas (Neto)" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
-          <NavBtn icon={<ShoppingCart size={20}/>} label="Pedidos y Guías" active={activeTab === 'orders'} onClick={() => setActiveTab('orders')} />
-          <NavBtn icon={<Package size={20}/>} label="Inventario (Fotos)" active={activeTab === 'products'} onClick={() => setActiveTab('products')} />
-          <NavBtn icon={<Megaphone size={20}/>} label="Marketing & Ofertas" active={activeTab === 'marketing'} onClick={() => setActiveTab('marketing')} />
-          <NavBtn icon={<Settings size={20}/>} label="Configuración Web" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
+        <nav className="flex-1 px-4 space-y-2 mt-8 overflow-y-auto">
+          <NavBtn icon={<LayoutDashboard size={20}/>} label="Reporte Financiero" active={activeTab === 'dashboard'} onClick={() => handleNavClick('dashboard')} />
+          <NavBtn icon={<ShoppingCart size={20}/>} label="Pedidos y Guías" active={activeTab === 'orders'} onClick={() => handleNavClick('orders')} />
+          <NavBtn icon={<Package size={20}/>} label="Inventario (Fotos)" active={activeTab === 'products'} onClick={() => handleNavClick('products')} />
+          <NavBtn icon={<Megaphone size={20}/>} label="Marketing & Ofertas" active={activeTab === 'marketing'} onClick={() => handleNavClick('marketing')} />
+          <NavBtn icon={<Settings size={20}/>} label="Configuración Web" active={activeTab === 'settings'} onClick={() => handleNavClick('settings')} />
         </nav>
 
-        <div className="p-6">
+        <div className="p-6 mt-auto">
            {!notificationsEnabled && <button onClick={requestNotify} className="mb-4 flex items-center gap-3 text-xs font-bold text-unico-600 bg-red-50 w-full px-4 py-3 rounded-xl hover:bg-red-100 animate-pulse"><Bell size={16}/> Activar Alertas</button>}
            <button className="flex items-center gap-3 text-sm font-medium text-slate-400 hover:text-slate-600 w-full px-4 py-2 rounded-xl"><LogOut size={18}/> Salir</button>
         </div>
       </aside>
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 overflow-y-auto relative bg-slate-50/50">
-        <header className="bg-white/90 backdrop-blur sticky top-0 z-10 border-b border-slate-200 px-8 py-5 flex justify-between items-center shadow-sm">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-800 tracking-tight">
-              {activeTab === 'dashboard' && 'Tu Utilidad Real (70%)'}
-              {activeTab === 'marketing' && 'Gestión de Campañas'}
-              {activeTab === 'orders' && 'Logística de Envíos'}
-              {activeTab === 'products' && 'Catálogo de Productos'}
-              {activeTab === 'settings' && 'Ajustes Técnicos'}
-            </h2>
-            <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 mt-1">
-               <div className={`h-2 w-2 rounded-full ${selectedOrg.slug === 'score-store' ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-               {selectedOrg.name.toUpperCase()}
+      <main className="flex-1 overflow-y-auto relative bg-slate-50/50 w-full">
+        <header className="bg-white/90 backdrop-blur sticky top-0 z-10 border-b border-slate-200 px-6 py-4 flex justify-between items-center shadow-sm">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setMobileMenuOpen(true)} className="md:hidden p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+              <Menu size={24} />
+            </button>
+            
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight truncate max-w-[200px] md:max-w-none">
+                {activeTab === 'dashboard' && 'Finanzas Generales'}
+                {activeTab === 'marketing' && 'Marketing'}
+                {activeTab === 'orders' && 'Logística'}
+                {activeTab === 'products' && 'Inventario'}
+                {activeTab === 'settings' && 'Ajustes'}
+              </h2>
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 mt-1">
+                 <div className={`h-2 w-2 rounded-full ${selectedOrg.slug === 'score-store' ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                 <span className="hidden md:inline">{selectedOrg.name.toUpperCase()}</span>
+                 <span className="md:hidden">ONLINE</span>
+              </div>
             </div>
           </div>
         </header>
 
-        <div className="p-8 max-w-6xl mx-auto pb-32">
+        <div className="p-4 md:p-8 max-w-6xl mx-auto pb-32">
           {activeTab === 'dashboard' && <DashboardView orgId={selectedOrg.id} setHelp={setHelpMsg} />}
           {activeTab === 'orders' && <OrdersView orgId={selectedOrg.id} setHelp={setHelpMsg} />}
           {activeTab === 'products' && <ProductsView orgId={selectedOrg.id} setHelp={setHelpMsg} />}
@@ -117,12 +144,12 @@ export default function AdminDashboard() {
         </div>
       </main>
 
-      {helpMsg && <div className="fixed bottom-6 right-6 max-w-sm bg-slate-900 text-white p-5 rounded-2xl shadow-2xl z-50 animate-in slide-in-from-bottom-5 flex gap-4 items-start"><Info className="text-unico-600 shrink-0 mt-1" size={24} /><div><h4 className="font-bold text-sm mb-1 text-unico-100">Ayuda Rápida</h4><p className="text-sm leading-relaxed opacity-90">{helpMsg}</p><button onClick={() => setHelpMsg(null)} className="text-xs font-bold mt-3 hover:text-unico-600 underline">Entendido</button></div></div>}
+      {helpMsg && <div className="fixed bottom-6 right-6 left-6 md:left-auto md:max-w-sm bg-slate-900 text-white p-5 rounded-2xl shadow-2xl z-50 animate-in slide-in-from-bottom-5 flex gap-4 items-start"><Info className="text-unico-600 shrink-0 mt-1" size={24} /><div><h4 className="font-bold text-sm mb-1 text-unico-100">Ayuda Rápida</h4><p className="text-sm leading-relaxed opacity-90">{helpMsg}</p><button onClick={() => setHelpMsg(null)} className="text-xs font-bold mt-3 hover:text-unico-600 underline">Entendido</button></div></div>}
     </div>
   );
 }
 
-// --- VISTA FINANCIERA CORREGIDA (70%) ---
+// --- VISTA FINANCIERA (70% NETO + DESGLOSE PORCENTAJES) ---
 function DashboardView({ orgId, setHelp }) {
   const [finance, setFinance] = useState({ gross: 0, stripe: 0, shipping: 0, net70: 0, orders: 0 });
 
@@ -139,19 +166,17 @@ function DashboardView({ orgId, setHelp }) {
           const total = o.total || 0;
           gross += total;
           
-          // 1. Comisión Stripe Estimada (~4.6% + $3 IVA incluido)
+          // Stripe Fees (~4.6%)
           const fee = (total * 0.036) + 3; 
           const taxOnFee = fee * 0.16;
           stripeFees += (fee + taxOnFee);
 
-          // 2. Costo Envío Estimado (Si no es pickup)
-          // Asumimos promedio $220 si no hay dato exacto
+          // Shipping Cost (Estimado)
           shippingCosts += 220; 
         });
       }
 
-      // CÁLCULO DEL 70% SOBRE LA UTILIDAD BRUTA
-      // (Ventas - Stripe - Envíos) * 0.70
+      // CÁLCULO DE TU GANANCIA (70%)
       const netProfit100 = gross - stripeFees - shippingCosts;
       const netProfit70 = netProfit100 > 0 ? (netProfit100 * 0.70) : 0;
 
@@ -160,64 +185,59 @@ function DashboardView({ orgId, setHelp }) {
         gross: gross,
         stripe: stripeFees,
         shipping: shippingCosts,
-        net70: netProfit70 // ESTE ES TU DINERO REAL
+        net70: netProfit70 
       });
     }
     load();
   }, [orgId]);
 
   const money = (v) => `$${v.toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+  const getPct = (val, total) => total > 0 ? ((val / total) * 100).toFixed(1) : '0.0';
 
   return (
     <div className="space-y-8">
-       {/* TARJETA MAESTRA DE UTILIDAD 70% */}
+       {/* TARJETA MAESTRA */}
        <div className="bg-slate-900 text-white p-8 rounded-3xl shadow-xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-unico-600 rounded-full blur-3xl opacity-20 -mr-16 -mt-16"></div>
           <div className="relative z-10">
             <div className="flex justify-between items-start mb-2">
-               <p className="text-slate-400 text-sm font-bold uppercase tracking-widest">TU GANANCIA NETA (70%)</p>
-               <button onClick={() => setHelp("Este monto es el 70% de la utilidad restante después de descontar comisiones de Stripe y costos de envío.")}><HelpCircle className="text-slate-500 hover:text-white"/></button>
+               <p className="text-slate-400 text-xs md:text-sm font-bold uppercase tracking-widest">UTILIDAD NETA</p>
+               <button onClick={() => setHelp("Ganancia líquida libre de costos operativos, comisiones y envíos.")}><HelpCircle className="text-slate-500 hover:text-white"/></button>
             </div>
-            <h2 className="text-5xl font-black text-white mb-6">{money(finance.net70)} <span className="text-lg text-green-400 font-medium">MXN</span></h2>
+            <h2 className="text-4xl md:text-5xl font-black text-white mb-6">{money(finance.net70)} <span className="text-lg text-green-400 font-medium">MXN</span></h2>
             
-            <div className="grid grid-cols-3 gap-4 pt-6 border-t border-slate-700 text-sm">
+            <div className="grid grid-cols-3 gap-2 md:gap-4 pt-6 border-t border-slate-700 text-xs md:text-sm">
                <div>
                  <p className="text-slate-400 text-[10px] uppercase mb-1">VENTAS TOTALES</p>
-                 <p className="text-lg font-bold">{money(finance.gross)}</p>
+                 <p className="font-bold">{money(finance.gross)}</p>
                </div>
                <div>
-                 <p className="text-slate-400 text-[10px] uppercase mb-1">STRIPE & FEES (-)</p>
-                 <p className="text-lg font-bold text-red-400">-{money(finance.stripe)}</p>
+                 <p className="text-slate-400 text-[10px] uppercase mb-1">COMISIONES ({getPct(finance.stripe, finance.gross)}%)</p>
+                 <p className="font-bold text-red-400">-{money(finance.stripe)}</p>
                </div>
                <div>
-                 <p className="text-slate-400 text-[10px] uppercase mb-1">ENVÍOS (-)</p>
-                 <p className="text-lg font-bold text-orange-400">-{money(finance.shipping)}</p>
+                 <p className="text-slate-400 text-[10px] uppercase mb-1">ENVÍOS ({getPct(finance.shipping, finance.gross)}%)</p>
+                 <p className="font-bold text-orange-400">-{money(finance.shipping)}</p>
                </div>
             </div>
           </div>
        </div>
 
-       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
           <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-             <div className="h-12 w-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><ShoppingCart/></div>
-             <div>
-                <p className="text-slate-400 text-xs font-bold uppercase">Pedidos Pagados</p>
-                <p className="text-2xl font-black text-slate-800">{finance.orders}</p>
-             </div>
+             <div className="h-12 w-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0"><ShoppingCart/></div>
+             <div><p className="text-slate-400 text-xs font-bold uppercase">Pedidos Pagados</p><p className="text-2xl font-black text-slate-800">{finance.orders}</p></div>
           </div>
           <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-             <div className="h-12 w-12 bg-green-50 text-green-600 rounded-xl flex items-center justify-center"><DollarSign/></div>
-             <div>
-                <p className="text-slate-400 text-xs font-bold uppercase">Ticket Promedio</p>
-                <p className="text-2xl font-black text-slate-800">{finance.orders > 0 ? money(finance.gross / finance.orders) : '$0.00'}</p>
-             </div>
+             <div className="h-12 w-12 bg-green-50 text-green-600 rounded-xl flex items-center justify-center shrink-0"><DollarSign/></div>
+             <div><p className="text-slate-400 text-xs font-bold uppercase">Ticket Promedio</p><p className="text-2xl font-black text-slate-800">{finance.orders > 0 ? money(finance.gross / finance.orders) : '$0.00'}</p></div>
           </div>
        </div>
     </div>
   );
 }
 
-// --- GESTIÓN DE PRODUCTOS (SUBIDA FOTOS) ---
+// --- GESTIÓN DE PRODUCTOS ---
 function ProductsView({ orgId, setHelp }) {
   const [products, setProducts] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -230,14 +250,14 @@ function ProductsView({ orgId, setHelp }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-        <div className="flex items-center gap-2"><Search className="text-slate-400" size={20}/><input type="text" placeholder="Buscar..." className="outline-none text-sm w-64"/></div>
-        <button onClick={() => setShowModal(true)} className="bg-unico-600 hover:bg-red-700 text-white px-5 py-3 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:scale-105 transition-all">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+        <div className="flex items-center gap-2 w-full md:w-auto"><Search className="text-slate-400" size={20}/><input type="text" placeholder="Buscar..." className="outline-none text-sm w-full md:w-64"/></div>
+        <button onClick={() => setShowModal(true)} className="bg-unico-600 text-white px-5 py-3 rounded-xl text-sm font-bold flex items-center gap-2 w-full md:w-auto justify-center shadow-lg hover:bg-red-700">
           <Plus size={18}/> Nuevo Producto
         </button>
       </div>
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <table className="w-full text-left text-sm">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden overflow-x-auto">
+        <table className="w-full text-left text-sm min-w-[600px]">
           <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 uppercase text-xs">
             <tr><th className="px-6 py-4">Foto</th><th className="px-6 py-4">Nombre</th><th className="px-6 py-4">Precio</th><th className="px-6 py-4">Stock</th><th className="px-6 py-4 text-right">Estado</th></tr>
           </thead>
@@ -259,7 +279,6 @@ function ProductsView({ orgId, setHelp }) {
   );
 }
 
-// MODAL SUBIDA DE FOTOS
 function CreateProductModal({ orgId, onClose, onSuccess, setHelp }) { 
   const [form, setForm] = useState({ name: '', price: '', stock: '100', category: 'BAJA_1000' });
   const [imageFile, setImageFile] = useState(null);
@@ -272,16 +291,14 @@ function CreateProductModal({ orgId, onClose, onSuccess, setHelp }) {
   const submit = async (e) => { 
     e.preventDefault(); 
     setUploading(true); 
-
-    let finalImageUrl = "/assets/logo-score.webp"; // Default
+    let finalImageUrl = "/assets/logo-score.webp"; 
 
     if (imageFile) {
       const fileName = `${Date.now()}-${imageFile.name.replace(/\s/g, '-')}`;
-      // Subir al Bucket 'products' (debe ser público en Supabase)
-      const { data, error } = await supabase.storage.from('products').upload(fileName, imageFile);
+      const { error } = await supabase.storage.from('products').upload(fileName, imageFile);
       if (error) { alert("Error foto: " + error.message); setUploading(false); return; }
-      const { data: publicData } = supabase.storage.from('products').getPublicUrl(fileName);
-      finalImageUrl = publicData.publicUrl;
+      const { data } = supabase.storage.from('products').getPublicUrl(fileName);
+      finalImageUrl = data.publicUrl;
     }
 
     await supabase.from('products').insert({ 
@@ -291,8 +308,8 @@ function CreateProductModal({ orgId, onClose, onSuccess, setHelp }) {
   }; 
   
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in overflow-y-auto">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative">
         <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <h3 className="font-bold text-lg text-slate-800">Alta de Producto</h3>
           <button onClick={onClose}><X size={20}/></button>
@@ -302,7 +319,7 @@ function CreateProductModal({ orgId, onClose, onSuccess, setHelp }) {
             <label className="text-sm font-bold text-slate-800 block mb-2">Foto del Producto</label>
             <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-slate-50 transition-all relative">
               <input type="file" accept="image/*" onChange={handleImageChange} className="absolute inset-0 opacity-0 cursor-pointer" />
-              {imageFile ? <div className="text-green-600 font-bold flex items-center gap-2"><CheckCircle size={20}/> {imageFile.name}</div> : <><Upload className="text-slate-400 mb-2" size={32}/><span className="text-sm text-slate-500">Subir Foto</span></>}
+              {imageFile ? <div className="text-green-600 font-bold flex items-center gap-2 text-sm"><CheckCircle size={16}/> {imageFile.name}</div> : <><Upload className="text-slate-400 mb-2" size={32}/><span className="text-sm text-slate-500">Toca para subir foto</span></>}
             </div>
           </div>
           <FormInput label="Nombre" placeholder="Ej. Hoodie 2026" value={form.name} onChange={v => setForm({...form, name: v})} onHelp={() => setHelp("Nombre descriptivo.")}/>
@@ -316,14 +333,13 @@ function CreateProductModal({ orgId, onClose, onSuccess, setHelp }) {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-6"><FormInput label="Precio" placeholder="0.00" value={form.price} onChange={v => setForm({...form, price: v})} onHelp={() => setHelp("Precio final.")}/><FormInput label="Stock" placeholder="100" value={form.stock} onChange={v => setForm({...form, stock: v})} onHelp={() => setHelp("Cantidad.")}/></div>
-          <button type="submit" disabled={uploading} className="w-full bg-unico-600 text-white font-bold py-4 rounded-xl shadow-lg">{uploading ? 'Subiendo...' : 'GUARDAR'}</button>
+          <button type="submit" disabled={uploading} className="w-full bg-unico-600 text-white font-bold py-4 rounded-xl shadow-lg">{uploading ? 'Guardando...' : 'GUARDAR'}</button>
         </form>
       </div>
     </div>
   ); 
 }
 
-// RESTO DE FUNCIONES (Orders, Marketing, Settings, UI) -> MANTENER IGUAL QUE VERSIÓN ANTERIOR
 function OrdersView({ orgId, setHelp }) {
   const [orders, setOrders] = useState([]);
   useEffect(() => { supabase.from('orders').select('*').eq('org_id', orgId).order('created_at', { ascending: false }).then(({ data }) => setOrders(data || [])); }, [orgId]);
