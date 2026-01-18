@@ -2,9 +2,9 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { 
-  LayoutDashboard, Package, Settings, ShoppingCart, Truck, 
+  LayoutDashboard, Package, Settings, ShoppingCart, 
   LogOut, ChevronDown, Plus, Search, Save, X, HelpCircle, 
-  Info, MessageCircle, Megaphone, Bell, Upload, CheckCircle, 
+  Info, Megaphone, Bell, Upload, CheckCircle, 
   DollarSign, Menu 
 } from 'lucide-react';
 
@@ -149,7 +149,7 @@ export default function AdminDashboard() {
   );
 }
 
-// --- VISTA FINANCIERA (70% NETO CON ETIQUETA LIMPIA) ---
+// --- VISTA FINANCIERA (70% NETO) ---
 function DashboardView({ orgId, setHelp }) {
   const [finance, setFinance] = useState({ gross: 0, stripe: 0, shipping: 0, net70: 0, orders: 0 });
 
@@ -201,7 +201,6 @@ function DashboardView({ orgId, setHelp }) {
           <div className="absolute top-0 right-0 w-64 h-64 bg-unico-600 rounded-full blur-3xl opacity-20 -mr-16 -mt-16"></div>
           <div className="relative z-10">
             <div className="flex justify-between items-start mb-2">
-               {/* ETIQUETA CORREGIDA: Solo dice "UTILIDAD NETA" */}
                <p className="text-slate-400 text-xs md:text-sm font-bold uppercase tracking-widest">UTILIDAD NETA</p>
                <button onClick={() => setHelp("Ganancia líquida libre de costos operativos, comisiones y envíos.")}><HelpCircle className="text-slate-500 hover:text-white"/></button>
             </div>
