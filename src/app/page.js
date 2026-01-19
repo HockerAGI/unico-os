@@ -19,9 +19,9 @@ import {
   Bell,
   Menu,
   Shield,
-  CheckCircle, // Agregado faltante en imports originales
-  Upload,       // Agregado faltante en imports originales
-  DollarSign    // Agregado faltante en imports originales
+  CheckCircle,
+  Upload,
+  DollarSign
 } from "lucide-react";
 
 /** Formateador de moneda MXN */
@@ -159,10 +159,6 @@ function LoginScreen() {
           >
             {mode === "login" ? "Crear cuenta" : "Ya tengo cuenta"}
           </button>
-
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Recomendado: habilitar RLS y memberships. Sin eso, un panel multi-tenant no es seguro.
-          </p>
         </form>
       </div>
     </div>
@@ -212,11 +208,12 @@ function AdminDashboard() {
         const user = userRes?.user;
         if (!user) return;
 
-        // ✅ MULTITENANT: solo orgs donde el usuario tiene membership
+        // ✅ MULTITENANT & SOFT DELETE: solo orgs donde el usuario tiene membership activa
         const { data: mems, error: memErr } = await supabase
           .from("org_memberships")
           .select("org_id, role")
-          .eq("user_id", user.id);
+          .eq("user_id", user.id)
+          .is("deleted_at", null); // Solo activos
 
         if (memErr) throw memErr;
 
@@ -261,7 +258,7 @@ function AdminDashboard() {
     }
   }, [allowedTabs, activeTab]);
 
-  // SCANNER DE ALERTAS (solo para roles con ops/orders/products)
+  // SCANNER DE ALERTAS
   useEffect(() => {
     if (!selectedOrgId || !notificationsEnabled) return;
     if (!hasPerm(role, "orders") && !hasPerm(role, "products")) return;
@@ -279,6 +276,7 @@ function AdminDashboard() {
             .eq("org_id", selectedOrgId)
             .not("stock", "is", null)
             .lt("stock", 5)
+            .is("deleted_at", null) // Ignore deleted
             .order("stock", { ascending: true })
             .limit(1);
 
@@ -296,7 +294,8 @@ function AdminDashboard() {
             .from("orders")
             .select("*", { count: "exact", head: true })
             .eq("org_id", selectedOrgId)
-            .eq("status", "paid");
+            .eq("status", "paid")
+            .is("deleted_at", null); // Ignore deleted
 
           if (typeof count === "number" && count > 0) {
             new Notification("💰 PEDIDOS POR ENVIAR", {
@@ -528,7 +527,8 @@ function DashboardView({ orgId, setHelp }) {
         .from("orders")
         .select("total, shipping_cost, stripe_fee, status")
         .eq("org_id", orgId)
-        .eq("status", "paid");
+        .eq("status", "paid")
+        .is("deleted_at", null); // Soft Delete check
 
       if (error) return;
 
@@ -635,11 +635,27 @@ function ProductsView({ orgId, setHelp, role }) {
       .from("products")
       .select("*")
       .eq("org_id", orgId)
+      .is("deleted_at", null) // Soft delete
       .order("created_at", { ascending: false })
       .then(({ data }) => setProducts(data || []));
   }, [orgId, refresh]);
 
   const canWrite = ["owner", "admin", "ops"].includes(String(role || "").toLowerCase()) && hasPerm(role, "products");
+  const canDelete = ["owner", "admin"].includes(String(role || "").toLowerCase());
+
+  const softDeleteProduct = async (product_id) => {
+    if (!canDelete) return;
+    if (!confirm("¿Mover este producto a la papelera (Soft Delete)?")) return;
+
+    const { error } = await supabase
+      .from("products")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", product_id)
+      .eq("org_id", orgId);
+      
+    if (error) alert("Error: " + error.message);
+    else setRefresh((p) => p + 1);
+  };
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -718,7 +734,7 @@ function ProductsView({ orgId, setHelp, role }) {
 
                 <td className="px-6 py-4 font-mono text-slate-500">{p.sku || "—"}</td>
 
-                <td className="px-6 py-4 text-right">
+                <td className="px-6 py-4 text-right flex justify-end items-center gap-2">
                   <span
                     className={`text-xs font-extrabold px-2 py-1 rounded-lg ${
                       p.active ? "text-green-700 bg-green-50" : "text-slate-600 bg-slate-100"
@@ -726,6 +742,16 @@ function ProductsView({ orgId, setHelp, role }) {
                   >
                     {p.active ? "Activo" : "Inactivo"}
                   </span>
+                  
+                  {canDelete && (
+                    <button 
+                      onClick={() => softDeleteProduct(p.id)}
+                      className="text-slate-400 hover:text-red-500 p-1"
+                      title="Eliminar (Papelera)"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -934,6 +960,7 @@ function OrdersView({ orgId, setHelp, role }) {
       .from("orders")
       .select("*")
       .eq("org_id", orgId)
+      .is("deleted_at", null) // Soft Delete
       .order("created_at", { ascending: false })
       .then(({ data }) => setOrders(data || []));
   }, [orgId, refresh]);
@@ -954,7 +981,7 @@ function OrdersView({ orgId, setHelp, role }) {
     const guide = prompt("Número de guía / tracking:", order?.tracking_number || "");
     if (!guide) return;
 
-    // FIX CRÍTICO: Obtener token para request autorizado
+    // ✅ FIX: Obtener token para request autorizado
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
     
@@ -964,7 +991,7 @@ function OrdersView({ orgId, setHelp, role }) {
       method: "POST",
       headers: { 
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}` // HEADER FALTANTE AGREGADO
+        "Authorization": `Bearer ${token}` // HEADER FALTANTE CORREGIDO
       },
       body: JSON.stringify({
         org_id: orgId,
@@ -1211,6 +1238,7 @@ function UsersView({ orgId, setHelp, role }) {
       .from("org_memberships")
       .select("user_id, role, created_at")
       .eq("org_id", orgId)
+      .is("deleted_at", null) // Soft Delete
       .order("created_at", { ascending: false })
       .then(({ data }) => setMembers(data || []));
   }, [orgId, refresh]);
@@ -1221,7 +1249,7 @@ function UsersView({ orgId, setHelp, role }) {
     setBusy(true);
 
     try {
-      // FIX CRÍTICO: Obtener token para request autorizado
+      // ✅ FIX: Obtener token para request autorizado
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       
@@ -1231,13 +1259,12 @@ function UsersView({ orgId, setHelp, role }) {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}` // HEADER FALTANTE AGREGADO
+          "Authorization": `Bearer ${token}` // HEADER FALTANTE CORREGIDO
         },
         body: JSON.stringify({
           org_id: orgId,
           email: inviteEmail,
           role: inviteRole
-          // requester_user_id removido porque la API ya lo obtiene del token de forma segura
         })
       });
 
@@ -1264,10 +1291,21 @@ function UsersView({ orgId, setHelp, role }) {
 
   const removeMember = async (user_id) => {
     if (!canManage) return;
-    if (!confirm("¿Quitar acceso a esta organización?")) return;
+    
+    // ✅ SOFT DELETE: Confirmación y Update en vez de Delete
+    if (!confirm("¿Desactivar acceso de este usuario? (El usuario no se borra, solo se desactiva)")) return;
 
-    await supabase.from("org_memberships").delete().eq("org_id", orgId).eq("user_id", user_id);
-    setRefresh((p) => p + 1);
+    const { error } = await supabase
+      .from("org_memberships")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("org_id", orgId)
+      .eq("user_id", user_id);
+
+    if (error) {
+      alert("Error al desactivar: " + error.message);
+    } else {
+      setRefresh((p) => p + 1);
+    }
   };
 
   return (
@@ -1352,14 +1390,14 @@ function UsersView({ orgId, setHelp, role }) {
                   disabled={!canManage}
                   className="px-4 py-2 rounded-2xl text-xs font-extrabold bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-60"
                 >
-                  Quitar
+                  Desactivar
                 </button>
               </div>
             </div>
           ))}
 
           {members.length === 0 ? (
-            <div className="p-10 text-center text-slate-500 text-sm">No hay miembros (org_memberships vacío).</div>
+            <div className="p-10 text-center text-slate-500 text-sm">No hay miembros activos.</div>
           ) : null}
         </div>
       </div>
@@ -1430,7 +1468,7 @@ function EmptyStateMultiTenant() {
         </div>
         <h2 className="text-lg font-extrabold text-slate-900">Sin organizaciones asignadas</h2>
         <p className="text-sm text-slate-500 font-semibold mt-2">
-          Tu usuario no tiene registros en <span className="font-mono">org_memberships</span>. Necesitas que owner/admin te agregue a una organización.
+          Tu usuario no tiene registros activos en <span className="font-mono">org_memberships</span>. Necesitas que owner/admin te agregue a una organización.
         </p>
       </div>
     </div>
