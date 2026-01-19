@@ -1,20 +1,41 @@
+/* src/app/globals.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --unico-600: #E10600;
+:root{
+  --unico-red:#E10600;
+  --bg:#f8fafc; /* slate-50 vibe */
+  --text:#0f172a; /* slate-900 vibe */
 }
 
-/* Scrollbar clean (pro) */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(15, 23, 42, 0.25) transparent;
+html, body{
+  height: 100%;
 }
-*::-webkit-scrollbar {
-  width: 10px;
+
+body{
+  background: var(--bg);
+  color: var(--text);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
-*::-webkit-scrollbar-thumb {
-  background: rgba(15, 23, 42, 0.2);
-  border-radius: 999px;
+
+/* Safe-area (iOS) */
+body{
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Better tap */
+button, a{
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Scrollbar */
+*::-webkit-scrollbar{ width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb{ background: rgba(15, 23, 42, 0.25); border-radius: 999px; }
+*::-webkit-scrollbar-track{ background: transparent; }
+
+/* Selection */
+::selection{
+  background: rgba(225, 6, 0, 0.18);
 }
