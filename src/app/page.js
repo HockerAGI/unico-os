@@ -18,7 +18,10 @@ import {
   Megaphone,
   Bell,
   Menu,
-  Shield
+  Shield,
+  CheckCircle, // Agregado faltante en imports originales
+  Upload,       // Agregado faltante en imports originales
+  DollarSign    // Agregado faltante en imports originales
 } from "lucide-react";
 
 /** Formateador de moneda MXN */
@@ -945,26 +948,26 @@ function OrdersView({ orgId, setHelp, role }) {
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
   };
 
-  async function getRequesterUserId() {
-    const { data } = await supabase.auth.getUser();
-    return data?.user?.id || null;
-  }
-
   const updateTracking = async (order) => {
     if (!canWrite) return;
 
     const guide = prompt("Número de guía / tracking:", order?.tracking_number || "");
     if (!guide) return;
 
-    const requester_user_id = await getRequesterUserId();
-    if (!requester_user_id) return alert("Sesión inválida. Vuelve a entrar.");
+    // FIX CRÍTICO: Obtener token para request autorizado
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    
+    if (!token) return alert("Sesión expirada. Recarga la página.");
 
     const res = await fetch("/api/orders/update", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}` // HEADER FALTANTE AGREGADO
+      },
       body: JSON.stringify({
         org_id: orgId,
-        requester_user_id,
         order_id: order.id,
         patch: { tracking_number: guide, status: "shipped" }
       })
@@ -1212,28 +1215,29 @@ function UsersView({ orgId, setHelp, role }) {
       .then(({ data }) => setMembers(data || []));
   }, [orgId, refresh]);
 
-  async function getRequesterUserId() {
-    const { data } = await supabase.auth.getUser();
-    return data?.user?.id || null;
-  }
-
   const invite = async () => {
     if (!canManage) return;
     if (!inviteEmail) return alert("Escribe un email.");
     setBusy(true);
 
     try {
-      const requester_user_id = await getRequesterUserId();
-      if (!requester_user_id) return alert("Sesión inválida. Vuelve a entrar.");
+      // FIX CRÍTICO: Obtener token para request autorizado
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      
+      if (!token) return alert("Sesión expirada. Recarga la página.");
 
       const res = await fetch("/api/invite", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` // HEADER FALTANTE AGREGADO
+        },
         body: JSON.stringify({
           org_id: orgId,
           email: inviteEmail,
-          role: inviteRole,
-          requester_user_id
+          role: inviteRole
+          // requester_user_id removido porque la API ya lo obtiene del token de forma segura
         })
       });
 
