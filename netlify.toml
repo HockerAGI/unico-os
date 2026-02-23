@@ -2,13 +2,18 @@
 
 [build]
   command = "npm run build"
-  # ELIMINADO: publish = ".next". Netlify ahora auto-resuelve los estáticos y las Serverless Functions.
 
 [build.environment]
-  # Next.js 14 requiere una versión reciente de Node. 20 es el estándar más seguro y rápido actual.
   NODE_VERSION = "20"
-  # Optimización estricta para que Netlify compile las rutas de la API de Next.js correctamente
   NEXT_PRIVATE_STANDALONE = "true"
 
-# ELIMINADO: El bloque [[plugins]] con @netlify/plugin-nextjs. 
-# Netlify Runtime V5 ya viene integrado por defecto y ese plugin viejo causa conflictos de ruteo.
+# BLINDAJE DE SEGURIDAD EXIGIDO POR LIGHTHOUSE (CSP Y HSTS)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Content-Security-Policy = "default-src 'self'; img-src 'self' data: https://*.supabase.co; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co;"
