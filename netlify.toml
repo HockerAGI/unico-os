@@ -16,4 +16,5 @@
     X-XSS-Protection = "1; mode=block"
     Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Content-Security-Policy = "default-src 'self'; img-src 'self' data: https://*.supabase.co; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co;"
+    # FIX CSP: Permite cargar imágenes desde Score Store (.netlify.app) y blobs locales
+    Content-Security-Policy = "default-src 'self'; img-src 'self' data: blob: https://*.supabase.co https://*.netlify.app; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co;"
