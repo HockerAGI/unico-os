@@ -1,11 +1,14 @@
-# netlify.toml para ÚNICO OS (Next.js 14)
+# netlify.toml para ÚNICO OS (Next.js 14 App Router)
 
 [build]
   command = "npm run build"
-  publish = ".next"
-
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
+  # ELIMINADO: publish = ".next". Netlify ahora auto-resuelve los estáticos y las Serverless Functions.
 
 [build.environment]
-  NODE_VERSION = "18"
+  # Next.js 14 requiere una versión reciente de Node. 20 es el estándar más seguro y rápido actual.
+  NODE_VERSION = "20"
+  # Optimización estricta para que Netlify compile las rutas de la API de Next.js correctamente
+  NEXT_PRIVATE_STANDALONE = "true"
+
+# ELIMINADO: El bloque [[plugins]] con @netlify/plugin-nextjs. 
+# Netlify Runtime V5 ya viene integrado por defecto y ese plugin viejo causa conflictos de ruteo.
