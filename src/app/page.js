@@ -12,6 +12,9 @@ import {
 
 const moneyMXN = (v) => Number(v || 0).toLocaleString("es-MX", { style: "currency", currency: "MXN" });
 
+/* =========================================================
+   ENTRY POINT
+   ========================================================= */
 export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
@@ -33,6 +36,9 @@ export default function AdminPage() {
   return <AdminDashboard session={session} />;
 }
 
+/* =========================================================
+   LOGIN SCREEN
+   ========================================================= */
 function LoginScreen() {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
@@ -67,7 +73,8 @@ function LoginScreen() {
         <div className="p-8 text-center border-b border-slate-100 bg-slate-50/50">
           <div className="mx-auto h-16 w-16 bg-unico-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-lg shadow-red-500/30 mb-4">U</div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">UnicOs <span className="text-unico-600">Admin</span></h1>
-          <p className="text-xs font-bold text-slate-400 tracking-widest uppercase mt-2">Central Command</p>
+          {/* FIX LIGHTHOUSE: text-slate-500 en lugar de text-slate-400 para contraste de color válido */}
+          <p className="text-xs font-bold text-slate-500 tracking-widest uppercase mt-2">Central Command</p>
         </div>
 
         <form onSubmit={submit} className="p-8 space-y-5">
@@ -93,7 +100,7 @@ function LoginScreen() {
           </button>
 
           <div className="text-center pt-2">
-            <button type="button" className="text-xs font-bold text-slate-400 hover:text-unico-600 transition-colors" onClick={() => setMode(mode === "login" ? "signup" : "login")}>
+            <button type="button" className="text-xs font-bold text-slate-500 hover:text-unico-600 transition-colors" onClick={() => setMode(mode === "login" ? "signup" : "login")}>
               {mode === "login" ? "¿No tienes acceso? Solicitar cuenta" : "Volver al inicio de sesión"}
             </button>
           </div>
@@ -103,6 +110,9 @@ function LoginScreen() {
   );
 }
 
+/* =========================================================
+   DASHBOARD LAYOUT
+   ========================================================= */
 function AdminDashboard({ session }) {
   const [orgs, setOrgs] = useState([]);
   const [memberships, setMemberships] = useState([]);
@@ -242,6 +252,10 @@ function AdminDashboard({ session }) {
   );
 }
 
+/* =========================================================
+   VISTAS DE MÓDULOS 
+   ========================================================= */
+
 function DashboardView({ orgId }) {
   const [data, setData] = useState({ gross: 0, net: 0, orders: 0, avg: 0 });
 
@@ -305,9 +319,9 @@ function OrdersView({ orgId, setHelp, role }) {
           <tbody className="divide-y divide-slate-100">
             {orders.map(o => (
               <tr key={o.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-6 py-4"><span className="font-mono font-bold text-unico-600">#{o.id.split("-")[0].toUpperCase()}</span><div className="text-xs text-slate-400 font-medium mt-1">{new Date(o.created_at).toLocaleDateString()}</div></td>
+                <td className="px-6 py-4"><span className="font-mono font-bold text-unico-600">#{o.id.split("-")[0].toUpperCase()}</span><div className="text-xs text-slate-500 font-medium mt-1">{new Date(o.created_at).toLocaleDateString()}</div></td>
                 <td className="px-6 py-4"><div className="font-bold text-slate-800">{o.customer_name || "Sin Nombre"}</div><div className="text-xs text-slate-500">{o.email || "Sin correo"}</div></td>
-                <td className="px-6 py-4"><div className="text-xs text-slate-600 max-w-[200px] truncate" title={o.items_summary}>{o.items_summary || "Ver detalles"}</div><div className="text-[10px] font-bold text-slate-400 mt-1 uppercase">Vía: {o.shipping_mode || "N/A"}</div></td>
+                <td className="px-6 py-4"><div className="text-xs text-slate-600 max-w-[200px] truncate" title={o.items_summary}>{o.items_summary || "Ver detalles"}</div><div className="text-[10px] font-bold text-slate-500 mt-1 uppercase">Vía: {o.shipping_mode || "N/A"}</div></td>
                 <td className="px-6 py-4 font-black text-slate-800">{moneyMXN(o.amount_total_mxn)}</td>
                 <td className="px-6 py-4"><StatusPill status={o.status} /></td>
                 <td className="px-6 py-4 text-right">
@@ -315,7 +329,7 @@ function OrdersView({ orgId, setHelp, role }) {
                 </td>
               </tr>
             ))}
-            {orders.length === 0 && <tr><td colSpan="6" className="text-center p-12 text-slate-400 font-bold">Sin registros recientes.</td></tr>}
+            {orders.length === 0 && <tr><td colSpan="6" className="text-center p-12 text-slate-500 font-bold">Sin registros recientes.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -459,7 +473,7 @@ function SettingsView() {
 }
 
 function ProductsView() {
-  return <div className="p-12 bg-white rounded-[2rem] border border-dashed border-slate-300 text-center font-bold text-slate-400">Para habilitar el Inventario Dinámico, primero corre el script SQL en Supabase.</div>;
+  return <div className="p-12 bg-white rounded-[2rem] border border-dashed border-slate-300 text-center font-bold text-slate-500">Para habilitar el Inventario Dinámico, primero corre el script SQL en Supabase.</div>;
 }
 
 function LoadingScreen() {
@@ -475,7 +489,7 @@ function EmptyStateMultiTenant() {
   return (
     <div className="h-screen w-full flex items-center justify-center bg-slate-50 p-6">
       <div className="max-w-md w-full bg-white border border-slate-200 rounded-[2rem] shadow-2xl p-8 text-center tech-shadow animate-slide-up">
-        <div className="mx-auto h-16 w-16 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mb-6"><Shield size={32} /></div>
+        <div className="mx-auto h-16 w-16 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mb-6"><Shield size={32} /></div>
         <h2 className="text-xl font-black text-slate-900 mb-2">Acceso Restringido</h2>
         <p className="text-sm text-slate-500 font-medium leading-relaxed mb-6">Tu cuenta ha sido creada pero no tienes ninguna organización asignada. Solicita a un administrador que te invite a Score Store.</p>
         <button onClick={() => supabase.auth.signOut()} className="text-sm font-bold text-slate-900 hover:text-unico-600 underline">Volver al inicio</button>
