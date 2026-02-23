@@ -1,16 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
+  // Le dice a Next.js que genere archivos independientes optimizados (vital para Netlify Functions)
+  output: 'standalone',
   images: {
     remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: '*.supabase.co', // Permite cargar fotos del Storage de Supabase
-        port: '',
-        pathname: '/storage/v1/object/public/**',
-      },
-    ],
-  },
+      { 
+        protocol: "https", 
+        hostname: "lpbzndnavkbpxwnlbqgb.supabase.co" 
+      }
+    ]
+  }
 };
 
 module.exports = nextConfig;
