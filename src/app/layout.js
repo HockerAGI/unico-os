@@ -1,4 +1,5 @@
 import './globals.css'
+import SwRegister from './sw-register'
 
 export const viewport = {
   themeColor: '#0f0f10',
@@ -11,6 +12,10 @@ export const metadata = {
   title: 'UnicOs Admin',
   description: 'Central Command System para Score Store',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/icon-192.png',
+    apple: '/icon-192.png',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
@@ -21,7 +26,10 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="es-MX">
-      <body>{children}</body>
+      <body>
+        <SwRegister />
+        {children}
+      </body>
     </html>
   )
 }
