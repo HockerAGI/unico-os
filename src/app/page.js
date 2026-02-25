@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import Image from "next/image"; // <-- MOTOR DE COMPRESIÓN DE NEXT.JS
+import Image from "next/image";
 import {
   LayoutDashboard, Package, ShoppingCart, LogOut, ChevronDown, 
   Info, Megaphone, Menu, Shield, CheckCircle, DollarSign, Users, 
@@ -37,7 +37,7 @@ export default function AdminPage() {
 }
 
 /* =========================================================
-   LOGIN SCREEN (Enterprise Edition)
+   LOGIN SCREEN
    ========================================================= */
 function LoginScreen() {
   const [mode, setMode] = useState("login");
@@ -71,7 +71,6 @@ function LoginScreen() {
       
       <div className="w-full max-w-md bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden relative z-10 animate-slide-up">
         <div className="p-10 text-center border-b border-white/5 flex flex-col items-center">
-          {/* IMAGEN OPTIMIZADA */}
           <div className="relative h-24 w-24 mb-6 rounded-full shadow-[0_0_30px_rgba(37,99,235,0.3)] border-2 border-white/20 overflow-hidden">
             <Image src="/icon-192.png" alt="UnicOs" fill priority sizes="96px" className="object-cover" />
           </div>
@@ -107,7 +106,7 @@ function LoginScreen() {
 }
 
 /* =========================================================
-   DASHBOARD LAYOUT & IA AGENT
+   DASHBOARD LAYOUT
    ========================================================= */
 function AdminDashboard({ session }) {
   const [orgs, setOrgs] = useState([]);
@@ -157,7 +156,6 @@ function AdminDashboard({ session }) {
 
       <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-[#0a0f1c] text-slate-300 flex flex-col transition-transform duration-300 md:translate-x-0 md:static ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"} border-r border-slate-800`}>
         <div className="p-6 flex items-center gap-4 bg-white/5 border-b border-white/5">
-          {/* IMAGEN OPTIMIZADA */}
           <div className="relative h-12 w-12 rounded-full shadow-[0_0_15px_rgba(37,99,235,0.4)] border border-white/10 overflow-hidden shrink-0">
             <Image src="/icon-192.png" alt="UnicOs" fill sizes="48px" className="object-cover" />
           </div>
@@ -560,7 +558,7 @@ function UsersView({ orgId }) {
 }
 
 /* =========================================================
-   COMPONENTE: UNICO IA (AGENTE AUTÓNOMO CONECTADO A GEMINI)
+   COMPONENTE: UNICO IA (CON ABORT CONTROLLER PREVENTIVO)
    ========================================================= */
 function UnicoIAAgent({ orgId }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -581,6 +579,10 @@ function UnicoIAAgent({ orgId }) {
     setInput("");
     setIsThinking(true);
 
+    // Vacuna Riesgo 2: Controlador de latencia extrema. Netlify no colapsará.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); 
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -590,15 +592,22 @@ function UnicoIAAgent({ orgId }) {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${session?.access_token}`
         },
-        body: JSON.stringify({ prompt: userText, orgId })
+        body: JSON.stringify({ prompt: userText, orgId }),
+        signal: controller.signal // Inyección del salvavidas
       });
 
+      clearTimeout(timeoutId);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error de red neuronal");
 
       setMessages(prev => [...prev, { role: "ai", text: data.reply }]);
     } catch (error) {
-      setMessages(prev => [...prev, { role: "ai", text: "⚠️ Hubo un fallo en mis sistemas de conexión. Por favor asegúrate de haber creado la ruta API en /api/ai/route.js con tu llave de Gemini." }]);
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+         setMessages(prev => [...prev, { role: "ai", text: "⚡ La red neuronal de Gemini está experimentando alta latencia. He cancelado la operación para evitar el bloqueo del panel (Error 504). Intenta nuevamente en unos segundos." }]);
+      } else {
+         setMessages(prev => [...prev, { role: "ai", text: "⚠️ Hubo un fallo en mis sistemas de conexión. Por favor asegúrate de haber creado la ruta API en /api/ai/route.js con tu llave de Gemini." }]);
+      }
     } finally {
       setIsThinking(false);
     }
@@ -682,7 +691,6 @@ function LoadingScreen({ text = "Estableciendo Conexión Blindada..." }) {
     <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0a0f1c]">
       <div className="relative">
         <div className="absolute inset-0 bg-blue-600 rounded-full blur-[30px] opacity-40 animate-pulse"></div>
-        {/* IMAGEN OPTIMIZADA */}
         <div className="relative h-24 w-24 rounded-full shadow-2xl border border-white/20 overflow-hidden animate-bounce">
           <Image src="/icon-192.png" alt="Cargando" fill priority sizes="96px" className="object-cover" />
         </div>
