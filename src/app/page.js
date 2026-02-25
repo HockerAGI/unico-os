@@ -66,25 +66,27 @@ function LoginScreen() {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-slate-900 p-4 relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-red-600/20 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
+      {/* Efectos de fondo adaptados al Azul Marino Claro */}
+      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-600/20 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
       
       <div className="w-full max-w-md bg-white rounded-[2rem] shadow-2xl overflow-hidden relative z-10 animate-slide-up">
         <div className="p-8 text-center border-b border-slate-100 bg-slate-50/50">
-          <div className="mx-auto h-16 w-16 bg-red-600 rounded-2xl flex items-center justify-center text-white font-black text-3xl shadow-lg shadow-red-500/30 mb-4">U</div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">UnicOs <span className="text-red-600">Admin</span></h1>
+          {/* Logo Oficial Integrado y Redondeado */}
+          <img src="/icon-192.png" alt="UnicOs Logo" className="mx-auto h-20 w-20 rounded-full shadow-lg shadow-blue-500/30 mb-4 object-cover border-4 border-white" />
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">UnicOs <span className="text-blue-600">Admin</span></h1>
           <p className="text-xs font-bold text-slate-500 tracking-widest uppercase mt-2">Central Command</p>
         </div>
 
         <form onSubmit={submit} className="p-8 space-y-5">
           <div>
             <label className="text-xs font-bold text-slate-500 uppercase ml-1">Correo Corporativo</label>
-            <input className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-4 rounded-xl outline-none focus:border-red-600 focus:ring-4 focus:ring-red-600/10 transition-all font-semibold text-slate-800"
+            <input className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-4 rounded-xl outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all font-semibold text-slate-800"
               value={email} onChange={(e) => setEmail(e.target.value.trim())} placeholder="admin@scorestore.com" type="email" />
           </div>
           <div>
             <label className="text-xs font-bold text-slate-500 uppercase ml-1">Clave de Acceso</label>
-            <input className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-4 rounded-xl outline-none focus:border-red-600 focus:ring-4 focus:ring-red-600/10 transition-all font-semibold text-slate-800"
+            <input className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-4 rounded-xl outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all font-semibold text-slate-800"
               value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" type="password" />
           </div>
 
@@ -94,7 +96,7 @@ function LoginScreen() {
             </div>
           )}
 
-          <button disabled={busy} className="w-full bg-slate-900 hover:bg-red-600 text-white font-black py-4 rounded-xl shadow-lg transition-colors duration-300 disabled:opacity-50">
+          <button disabled={busy} className="w-full bg-slate-900 hover:bg-blue-600 text-white font-black py-4 rounded-xl shadow-lg transition-colors duration-300 disabled:opacity-50">
             {busy ? "AUTENTICANDO..." : mode === "login" ? "INICIAR SESIÓN" : "SOLICITAR ACCESO"}
           </button>
         </form>
@@ -156,7 +158,8 @@ function AdminDashboard({ session }) {
 
       <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-slate-900 text-slate-300 flex flex-col transition-transform duration-300 md:translate-x-0 md:static ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="p-6 flex items-center gap-3 bg-slate-950/50 border-b border-slate-800">
-          <div className="h-10 w-10 bg-red-600 rounded-xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-red-600/20">U</div>
+          {/* Logo en el Menú Lateral */}
+          <img src="/icon-192.png" alt="UnicOs" className="h-10 w-10 rounded-full shadow-lg shadow-blue-600/20 object-cover border-2 border-slate-800" />
           <div>
             <h1 className="text-lg font-black text-white leading-tight tracking-tight">UnicOs</h1>
             <div className="flex items-center gap-2 mt-0.5">
@@ -169,7 +172,7 @@ function AdminDashboard({ session }) {
         <div className="p-4 border-b border-slate-800">
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 mb-2 block">Organización Activa</label>
           <div className="relative">
-            <select className="w-full appearance-none bg-slate-800 border-none rounded-xl py-3 px-4 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-red-600"
+            <select className="w-full appearance-none bg-slate-800 border-none rounded-xl py-3 px-4 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-blue-600"
               value={selectedOrgId || ""} onChange={(e) => { setSelectedOrgId(e.target.value); setActiveTab("dashboard"); }}>
               {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
@@ -180,7 +183,7 @@ function AdminDashboard({ session }) {
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto custom-scrollbar">
           {TABS.map(tab => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id); setMobileMenuOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === tab.id ? "bg-red-600 text-white shadow-lg shadow-red-600/20" : "hover:bg-slate-800 hover:text-white"}`}>
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === tab.id ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" : "hover:bg-slate-800 hover:text-white"}`}>
               <span className={`${activeTab === tab.id ? "text-white" : "text-slate-500"}`}>{tab.icon}</span>
               {tab.label}
             </button>
@@ -223,14 +226,13 @@ function AdminDashboard({ session }) {
 }
 
 /* =========================================================
-   VISTAS DE MÓDULOS (CON MAPEO CORRECTO A SCORE STORE)
+   VISTAS DE MÓDULOS
    ========================================================= */
 
 function DashboardView({ orgId }) {
   const [data, setData] = useState({ gross: 0, net: 0, orders: 0, avg: 0 });
 
   useEffect(() => {
-    // CORRECCIÓN: Usar organization_id
     supabase.from("orders").select("amount_total_mxn, amount_shipping_mxn, amount_discount_mxn").eq("organization_id", orgId).eq("status", "paid")
       .then(({ data: orders }) => {
         if (!orders) return;
@@ -244,10 +246,10 @@ function DashboardView({ orgId }) {
   return (
     <div className="space-y-6">
       <div className="bg-slate-900 p-8 md:p-10 rounded-[2rem] shadow-2xl relative overflow-hidden border border-slate-800">
-        <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-red-600/20 rounded-full blur-[100px] -mr-20 -mt-20 pointer-events-none"></div>
+        <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-blue-600/20 rounded-full blur-[100px] -mr-20 -mt-20 pointer-events-none"></div>
         <div className="relative z-10">
           <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2 flex items-center gap-2">
-            <DollarSign size={14} className="text-red-500" /> Ingreso Neto (Estimado)
+            <DollarSign size={14} className="text-blue-500" /> Ingreso Neto (Estimado)
           </p>
           <h2 className="text-5xl md:text-7xl font-black text-white tracking-tighter mb-8">
             {moneyMXN(data.net)}
@@ -268,7 +270,6 @@ function OrdersView({ orgId, setHelp, role }) {
   const [orders, setOrders] = useState([]);
   
   useEffect(() => {
-    // CORRECCIÓN: Usar organization_id
     supabase.from("orders").select("*").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(50)
       .then(({ data }) => setOrders(data || []));
   }, [orgId]);
@@ -277,7 +278,7 @@ function OrdersView({ orgId, setHelp, role }) {
     <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden tech-shadow">
       <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
         <h3 className="font-black text-lg text-slate-800">Últimos Pedidos</h3>
-        <button onClick={() => setHelp("Los pedidos 'paid' (Pagados) tienen guía automática. 'pending_payment' es OXXO pendiente.")} className="text-slate-400 hover:text-red-600"><Info size={20}/></button>
+        <button onClick={() => setHelp("Los pedidos 'paid' (Pagados) tienen guía automática. 'pending_payment' es OXXO pendiente.")} className="text-slate-400 hover:text-blue-600"><Info size={20}/></button>
       </div>
       <div className="overflow-x-auto custom-scrollbar">
         <table className="w-full text-left text-sm whitespace-nowrap">
@@ -290,7 +291,7 @@ function OrdersView({ orgId, setHelp, role }) {
           <tbody className="divide-y divide-slate-100">
             {orders.map(o => (
               <tr key={o.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-6 py-4"><span className="font-mono font-bold text-red-600">#{o.id.split("-")[0].toUpperCase()}</span><div className="text-xs text-slate-500 font-medium mt-1">{new Date(o.created_at).toLocaleDateString()}</div></td>
+                <td className="px-6 py-4"><span className="font-mono font-bold text-blue-600">#{o.id.split("-")[0].toUpperCase()}</span><div className="text-xs text-slate-500 font-medium mt-1">{new Date(o.created_at).toLocaleDateString()}</div></td>
                 <td className="px-6 py-4"><div className="font-bold text-slate-800">{o.customer_name || "Sin Nombre"}</div><div className="text-xs text-slate-500">{o.email || "Sin correo"}</div></td>
                 <td className="px-6 py-4"><div className="text-xs text-slate-600 max-w-[250px] truncate" title={o.items_summary}>{o.items_summary || "Ver detalles"}</div><div className="text-[10px] font-bold text-slate-500 mt-1 uppercase">Vía: {o.shipping_mode || "N/A"}</div></td>
                 <td className="px-6 py-4 font-black text-slate-800">{moneyMXN(o.amount_total_mxn)}</td>
@@ -332,7 +333,7 @@ function UsersView({ orgId }) {
             <div key={m.id} className="py-4 flex justify-between items-center">
               <div>
                 <p className="font-bold text-slate-800">{m.email}</p>
-                <p className="text-xs font-semibold text-red-600 uppercase tracking-widest">{m.role}</p>
+                <p className="text-xs font-semibold text-blue-600 uppercase tracking-widest">{m.role}</p>
               </div>
             </div>
           ))}
@@ -346,7 +347,6 @@ function CRMView({ orgId }) {
   const [customers, setCustomers] = useState([]);
   
   useEffect(() => {
-    // CORRECCIÓN: Usar organization_id
     supabase.from("orders").select("email, customer_name, phone, amount_total_mxn, created_at").eq("organization_id", orgId).eq("status", "paid")
       .then(({ data }) => {
         if (!data) return;
@@ -375,7 +375,7 @@ function CRMView({ orgId }) {
             <tr key={c.email} className="hover:bg-slate-50">
               <td className="px-6 py-4"><p className="font-bold text-slate-800">{c.name}</p><p className="text-xs text-slate-500">{c.email} • {c.phone}</p></td>
               <td className="px-6 py-4 font-bold text-slate-600">{c.orders} pedidos</td>
-              <td className="px-6 py-4 font-black text-red-600 text-right">{moneyMXN(c.ltv)}</td>
+              <td className="px-6 py-4 font-black text-blue-600 text-right">{moneyMXN(c.ltv)}</td>
             </tr>
           ))}
           {customers.length === 0 && <tr><td colSpan="3" className="text-center p-8 text-slate-500 font-bold">Sin clientes registrados.</td></tr>}
@@ -400,11 +400,11 @@ function MarketingView({ orgId }) {
     <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm tech-shadow max-w-xl animate-slide-up">
       <h3 className="font-black text-xl text-slate-800 mb-6">Cintillo de Ofertas Global</h3>
       <div className="flex items-center gap-3 mb-4">
-        <input type="checkbox" checked={cfg.promo_active || false} onChange={e => setCfg({...cfg, promo_active: e.target.checked})} className="w-5 h-5 accent-red-600" />
+        <input type="checkbox" checked={cfg.promo_active || false} onChange={e => setCfg({...cfg, promo_active: e.target.checked})} className="w-5 h-5 accent-blue-600" />
         <span className="font-bold text-slate-700">Activar Banner Superior en Tienda</span>
       </div>
-      <textarea value={cfg.promo_text || ""} onChange={e => setCfg({...cfg, promo_text: e.target.value})} className="w-full border-2 border-slate-100 rounded-xl p-4 font-bold text-slate-700 outline-none focus:border-red-600" placeholder="Ej. ENVÍO GRATIS A TODO MÉXICO"></textarea>
-      <button onClick={save} className="mt-4 w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:bg-red-600 transition-colors">Publicar en Score Store</button>
+      <textarea value={cfg.promo_text || ""} onChange={e => setCfg({...cfg, promo_text: e.target.value})} className="w-full border-2 border-slate-100 rounded-xl p-4 font-bold text-slate-700 outline-none focus:border-blue-600" placeholder="Ej. ENVÍO GRATIS A TODO MÉXICO"></textarea>
+      <button onClick={save} className="mt-4 w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:bg-blue-600 transition-colors">Publicar en Score Store</button>
     </div>
   );
 }
@@ -424,7 +424,8 @@ function ProductsView() {
 function LoadingScreen() {
   return (
     <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-900">
-      <div className="h-16 w-16 bg-red-600 rounded-2xl animate-pulse flex items-center justify-center shadow-[0_0_40px_rgba(225,6,0,0.4)] mb-6"><span className="text-white font-black text-2xl">U</span></div>
+      {/* Animación del logo al cargar */}
+      <img src="/icon-192.png" alt="UnicOs Logo" className="h-20 w-20 rounded-full animate-pulse shadow-[0_0_40px_rgba(37,99,235,0.4)] mb-6 object-cover border-4 border-slate-800" />
       <p className="text-xs font-bold tracking-widest text-slate-500 uppercase">Estableciendo Conexión...</p>
     </div>
   );
@@ -434,10 +435,10 @@ function EmptyStateMultiTenant() {
   return (
     <div className="h-screen w-full flex items-center justify-center bg-slate-50 p-6">
       <div className="max-w-md w-full bg-white border border-slate-200 rounded-[2rem] shadow-2xl p-8 text-center tech-shadow animate-slide-up">
-        <div className="mx-auto h-16 w-16 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mb-6"><Shield size={32} /></div>
+        <img src="/icon-192.png" alt="UnicOs" className="mx-auto h-20 w-20 rounded-full mb-6 object-cover shadow-lg" />
         <h2 className="text-xl font-black text-slate-900 mb-2">Acceso Restringido</h2>
         <p className="text-sm text-slate-500 font-medium leading-relaxed mb-6">Tu cuenta ha sido creada pero no tienes acceso administrativo a Score Store. Contacta al CEO.</p>
-        <button onClick={() => supabase.auth.signOut()} className="text-sm font-bold text-slate-900 hover:text-red-600 underline">Volver al inicio</button>
+        <button onClick={() => supabase.auth.signOut()} className="text-sm font-bold text-slate-900 hover:text-blue-600 underline">Volver al inicio</button>
       </div>
     </div>
   );
