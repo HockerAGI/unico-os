@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import Image from "next/image"; // <-- MOTOR DE COMPRESIÓN DE NEXT.JS
 import {
   LayoutDashboard, Package, ShoppingCart, LogOut, ChevronDown, 
   Info, Megaphone, Menu, Shield, CheckCircle, DollarSign, Users, 
@@ -69,8 +70,11 @@ function LoginScreen() {
       <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-indigo-600/10 rounded-full blur-[150px] pointer-events-none animate-pulse" />
       
       <div className="w-full max-w-md bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden relative z-10 animate-slide-up">
-        <div className="p-10 text-center border-b border-white/5">
-          <img src="/icon-192.png" alt="UnicOs" className="mx-auto h-24 w-24 rounded-full shadow-[0_0_30px_rgba(37,99,235,0.3)] mb-6 object-cover border-2 border-white/20" />
+        <div className="p-10 text-center border-b border-white/5 flex flex-col items-center">
+          {/* IMAGEN OPTIMIZADA */}
+          <div className="relative h-24 w-24 mb-6 rounded-full shadow-[0_0_30px_rgba(37,99,235,0.3)] border-2 border-white/20 overflow-hidden">
+            <Image src="/icon-192.png" alt="UnicOs" fill priority sizes="96px" className="object-cover" />
+          </div>
           <h1 className="text-3xl font-black text-white tracking-tight">UnicOs</h1>
           <p className="text-sm font-semibold text-blue-400 tracking-widest uppercase mt-2">Centro de Control Global</p>
         </div>
@@ -153,7 +157,10 @@ function AdminDashboard({ session }) {
 
       <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-[#0a0f1c] text-slate-300 flex flex-col transition-transform duration-300 md:translate-x-0 md:static ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"} border-r border-slate-800`}>
         <div className="p-6 flex items-center gap-4 bg-white/5 border-b border-white/5">
-          <img src="/icon-192.png" alt="UnicOs" className="h-12 w-12 rounded-full shadow-[0_0_15px_rgba(37,99,235,0.4)] object-cover border border-white/10" />
+          {/* IMAGEN OPTIMIZADA */}
+          <div className="relative h-12 w-12 rounded-full shadow-[0_0_15px_rgba(37,99,235,0.4)] border border-white/10 overflow-hidden shrink-0">
+            <Image src="/icon-192.png" alt="UnicOs" fill sizes="48px" className="object-cover" />
+          </div>
           <div>
             <h1 className="text-xl font-black text-white leading-tight">UnicOs</h1>
             <div className="flex items-center gap-2 mt-1">
@@ -570,16 +577,13 @@ function UnicoIAAgent({ orgId }) {
     if (!input.trim() || isThinking) return;
     const userText = input.trim();
     
-    // 1. Mostrar mensaje del usuario
     setMessages(prev => [...prev, { role: "user", text: userText }]);
     setInput("");
     setIsThinking(true);
 
     try {
-      // 2. Obtener la sesión segura
       const { data: { session } } = await supabase.auth.getSession();
       
-      // 3. Enviar al cerebro Backend (Gemini)
       const res = await fetch("/api/ai/route", {
         method: "POST",
         headers: {
@@ -590,14 +594,10 @@ function UnicoIAAgent({ orgId }) {
       });
 
       const data = await res.json();
-      
       if (!res.ok) throw new Error(data.error || "Error de red neuronal");
 
-      // 4. Mostrar respuesta de Gemini
       setMessages(prev => [...prev, { role: "ai", text: data.reply }]);
-
     } catch (error) {
-      // Fallback local en caso de que la ruta de API aún no esté creada
       setMessages(prev => [...prev, { role: "ai", text: "⚠️ Hubo un fallo en mis sistemas de conexión. Por favor asegúrate de haber creado la ruta API en /api/ai/route.js con tu llave de Gemini." }]);
     } finally {
       setIsThinking(false);
@@ -682,7 +682,10 @@ function LoadingScreen({ text = "Estableciendo Conexión Blindada..." }) {
     <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0a0f1c]">
       <div className="relative">
         <div className="absolute inset-0 bg-blue-600 rounded-full blur-[30px] opacity-40 animate-pulse"></div>
-        <img src="/icon-192.png" alt="Cargando" className="relative h-24 w-24 rounded-full shadow-2xl object-cover border border-white/20 animate-bounce" />
+        {/* IMAGEN OPTIMIZADA */}
+        <div className="relative h-24 w-24 rounded-full shadow-2xl border border-white/20 overflow-hidden animate-bounce">
+          <Image src="/icon-192.png" alt="Cargando" fill priority sizes="96px" className="object-cover" />
+        </div>
       </div>
       <p className="mt-8 text-xs font-black tracking-widest text-blue-400 uppercase">{text}</p>
     </div>
