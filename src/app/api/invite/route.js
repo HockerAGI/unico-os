@@ -21,13 +21,14 @@ export async function POST(req) {
 
     const cleanEmail = String(email).trim().toLowerCase();
     const cleanRole = String(role).trim().toLowerCase();
+    const requesterEmail = String(user?.email || "").trim().toLowerCase();
 
-    // 1) Validar privilegios del solicitante EN ESA ORGANIZACIÓN
+    // 1. Validar si el usuario actual es Owner/Admin (Usando admin_users de Score Store)
     const { data: reqUser, error: memErr } = await sb
       .from("admin_users")
-      .select("role,is_active")
+      .select("role")
       .eq("organization_id", organization_id)
-      .eq("email", String(user.email || "").trim().toLowerCase())
+      .eq("email", requesterEmail)
       .is("is_active", true)
       .maybeSingle();
 
@@ -35,25 +36,21 @@ export async function POST(req) {
     const reqRole = (reqUser?.role || "viewer").toLowerCase();
     if (!canManageUsers(reqRole)) return json(403, { error: "Privilegios insuficientes" });
 
-    // 2) Invitar vía Supabase Auth
+    // 2. Invitar vía Supabase Auth
     const { error: invErr } = await sb.auth.admin.inviteUserByEmail(cleanEmail);
-    if (invErr && !String(invErr.message || "").includes("already registered")) {
+    if (invErr && !invErr.message.includes("already registered")) {
       return json(500, { error: invErr.message });
     }
 
-    // 3) Upsert MULTI-TENANT (NO pisar por email)
-    // Requiere UNIQUE (organization_id, email) en admin_users (te dejo SQL abajo)
+    // 3. Upsert en admin_users
     const { error: upErr } = await sb
       .from("admin_users")
       .upsert(
         { organization_id, email: cleanEmail, role: cleanRole, is_active: true },
-        { onConflict: "organization_id,email" }
+        { onConflict: "organization_id,email" } 
       );
 
     if (upErr) return json(500, { error: upErr.message });
-
     return json(200, { ok: true, email: cleanEmail, role: cleanRole, organization_id });
-  } catch (e) {
-    return json(500, { error: e?.message || "Server error" });
-  }
+  } catch (e) { return json(500, { error: e?.message || "Server error" }); }
 }
