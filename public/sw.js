@@ -1,14 +1,12 @@
-/* ÚNICO OS — Service Worker (Admin SAFE v2)
-   FIX REAL:
-   - NO cachea "/" (Next.js + chunks = riesgo de pantallas en blanco)
-   - Solo cachea íconos/manifest (PWA) y deja Next manejar el resto
-   - Bypass total de /_next, /api y Supabase
-*/
+/* ÚNICO OS — Service Worker (Admin Secure Mode) */
+const CACHE_NAME = "unicos-admin-v2";
 
-const CACHE_NAME = "unicos-admin-static-v2";
-
-// Solo assets PWA (no páginas)
-const PRECACHE = [
+/**
+ * FIX REAL:
+ * - NO cacheamos "/" (HTML) para evitar pantallas en blanco por chunks viejos de Next.js.
+ * - Solo cacheamos assets PWA (manifest + icons).
+ */
+const STATIC_ASSETS = [
   "/manifest.json",
   "/icon-192.png",
   "/icon-512.png"
@@ -17,27 +15,16 @@ const PRECACHE = [
 self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil(
-    (async () => {
-      const cache = await caches.open(CACHE_NAME);
-      await Promise.allSettled(
-        PRECACHE.map(async (p) => {
-          try {
-            const res = await fetch(new Request(p, { cache: "reload" }));
-            if (res && (res.ok || res.type === "opaque")) await cache.put(p, res.clone());
-          } catch (_) {}
-        })
-      );
-    })()
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
   );
 });
 
 self.addEventListener("activate", (event) => {
+  self.clients.claim();
   event.waitUntil(
-    (async () => {
-      const keys = await caches.keys();
-      await Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : Promise.resolve())));
-      await self.clients.claim();
-    })()
+    caches.keys().then((keys) =>
+      Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : null)))
+    )
   );
 });
 
@@ -47,25 +34,28 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  if (req.method !== "GET") return;
-
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return;
+
+  // Solo GET
+  if (req.method !== "GET") return;
 
   // No tocar navegación (evita HTML viejo)
   if (req.mode === "navigate") return;
 
-  // Bypass absoluto de Next + APIs + Supabase
-  if (url.pathname.startsWith("/_next/")) return;
-  if (url.pathname.startsWith("/api/")) return;
-  if (url.origin.includes("supabase.co")) return;
+  // SEGURIDAD: Jamás cachear Supabase, APIs, Next chunks o storage
+  if (
+    url.pathname.startsWith("/api/") ||
+    url.pathname.startsWith("/_next/") ||
+    url.origin.includes("supabase.co")
+  ) {
+    return; // Bypass network directo
+  }
 
-  // Solo responder desde cache para assets PWA precacheados
-  if (!PRECACHE.includes(url.pathname)) return;
+  // Solo cachear nuestros assets PWA declarados arriba
+  if (!STATIC_ASSETS.includes(url.pathname)) return;
 
   event.respondWith(
-    (async () => {
-      const cache = await caches.open(CACHE_NAME);
+    caches.open(CACHE_NAME).then(async (cache) => {
       const cached = await cache.match(req, { ignoreSearch: true });
       if (cached) return cached;
 
@@ -74,6 +64,6 @@ self.addEventListener("fetch", (event) => {
         await cache.put(req, fresh.clone());
       }
       return fresh;
-    })()
+    })
   );
 });
