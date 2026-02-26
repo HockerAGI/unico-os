@@ -2,13 +2,27 @@
 
 [build]
   command = "npm run build"
-  # Para Next.js, Netlify maneja el "publish" automáticamente, no debes poner publish = "."
 
 [build.environment]
   NODE_VERSION = "20"
   NEXT_PRIVATE_STANDALONE = "true"
 
-# BLINDAJE DE SEGURIDAD EXIGIDO POR LIGHTHOUSE (CSP Y HSTS)
+# NO CACHE: Service Worker y Manifest (updates inmediatos)
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-store, no-cache, must-revalidate, proxy-revalidate"
+    Pragma = "no-cache"
+    Expires = "0"
+
+[[headers]]
+  for = "/manifest.json"
+  [headers.values]
+    Cache-Control = "no-store, no-cache, must-revalidate, proxy-revalidate"
+    Pragma = "no-cache"
+    Expires = "0"
+
+# BLINDAJE DE SEGURIDAD (CSP Y HSTS)
 [[headers]]
   for = "/*"
   [headers.values]
@@ -17,5 +31,4 @@
     X-XSS-Protection = "1; mode=block"
     Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    # FIX CSP: Permite cargar imágenes desde Score Store (.netlify.app) y blobs locales
     Content-Security-Policy = "default-src 'self'; img-src 'self' data: blob: https://*.supabase.co https://*.netlify.app; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co;"
