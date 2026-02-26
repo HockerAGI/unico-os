@@ -130,7 +130,7 @@ function AdminDashboard({ session }) {
   useEffect(() => {
     async function init() {
       try {
-        const userEmail = session?.user?.email || "";
+        const userEmail = String(session?.user?.email || "").trim().toLowerCase();
         console.log("🚀 Iniciando Login en God Mode para:", userEmail);
         
         // 1. God Mode: Buscar usuario ignorando mayúsculas (ilike) y SIN is_active por ahora
@@ -143,7 +143,7 @@ function AdminDashboard({ session }) {
 
         console.log("📦 Datos obtenidos de admin_users:", mems);
 
-        const orgIds = (mems || []).map(m => m.organization_id);
+        const orgIds = Array.from(new Set((mems || []).map(m => m.organization_id).filter(Boolean)));
         setMemberships((mems || []).map(m => ({ org_id: m.organization_id, role: m.role })));
 
         if (orgIds.length > 0) {
@@ -157,6 +157,11 @@ function AdminDashboard({ session }) {
           if (orgError) throw new Error("Error en organizations: " + JSON.stringify(orgError));
           
           console.log("🏢 Organizaciones cargadas:", orgData);
+
+          if (!orgData || orgData.length === 0) {
+            console.error("🚨 CRÍTICO: admin_users devolvió orgIds pero organizations no regresó filas. Revisa si esos IDs existen en organizations.");
+            alert("ERROR: Tu usuario sí está en admin_users, pero la organización NO existe o está mal ligada.\n\nSolución: verifica que admin_users.organization_id apunte a un organizations.id real.");
+          }
 
           setOrgs(orgData || []);
           setSelectedOrgId(orgData?.[0]?.id || null);
@@ -198,172 +203,131 @@ function AdminDashboard({ session }) {
       <aside className="hidden md:flex flex-col w-72 bg-slate-950 border-r border-slate-800 shrink-0 relative z-20">
         <div className="h-20 flex items-center px-6 border-b border-slate-800">
           <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center mr-3 shadow-lg shadow-blue-500/20">
-            <Shield className="text-white" size={20} />
+            <Shield size={22} className="text-white" />
           </div>
           <div>
-            <h2 className="text-xl font-black text-white leading-none">UnicOs</h2>
-            <p className="text-[10px] text-blue-400 font-bold tracking-widest uppercase mt-1">Enterprise</p>
+            <h2 className="font-black text-white text-lg tracking-tight">UnicOs</h2>
+            <p className="text-xs text-slate-500 font-medium">Enterprise Admin</p>
           </div>
         </div>
 
-        {/* Tenant Selector */}
-        {orgs.length > 1 && (
-          <div className="p-4 border-b border-slate-800">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 block">Organización Activa</label>
-            <div className="relative">
-              <select
-                className="w-full bg-slate-900 border border-slate-700 text-white font-bold px-4 py-3 rounded-xl appearance-none outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer"
-                value={selectedOrgId}
-                onChange={(e) => setSelectedOrgId(e.target.value)}
-              >
-                {orgs.map((o) => (
-                  <option key={o.id} value={o.id}>{o.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-4 top-3.5 text-slate-400 pointer-events-none" size={16} />
-            </div>
+        <div className="p-6 border-b border-slate-800">
+          <label className="text-xs font-black text-slate-500 uppercase tracking-wider mb-2 block">Organización</label>
+          <div className="relative">
+            <select
+              value={selectedOrgId}
+              onChange={(e) => setSelectedOrgId(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 text-white font-bold px-4 py-3 rounded-xl appearance-none focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all cursor-pointer"
+            >
+              {orgs.map((org) => (
+                <option key={org.id} value={org.id}>{org.name}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={18} />
           </div>
-        )}
+        </div>
 
-        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-          <p className="px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Módulos</p>
-          {TABS.map((t) => (
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          {TABS.map((tab) => (
             <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              className={`w-full flex items-center px-4 py-3.5 rounded-xl transition-all duration-200 font-bold text-sm ${
-                activeTab === t.id 
-                  ? "bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-inner" 
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${
+                activeTab === tab.id
+                  ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20"
                   : "text-slate-400 hover:bg-slate-900 hover:text-white"
               }`}
             >
-              <span className={`mr-3 ${activeTab === t.id ? "text-blue-500" : "text-slate-500"}`}>{t.icon}</span>
-              {t.label}
+              {tab.icon}
+              <span className="text-sm">{tab.label}</span>
             </button>
           ))}
         </nav>
 
-        <div className="p-6 border-t border-slate-800 bg-slate-950">
-          <div className="flex items-center mb-6">
-            <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0">
-              <span className="text-sm font-bold text-white">{session.user.email.substring(0,2).toUpperCase()}</span>
-            </div>
-            <div className="ml-3 overflow-hidden">
-              <p className="text-sm font-bold text-white truncate">{session.user.email}</p>
-              <p className="text-xs text-slate-500 font-medium">Operador de Sistema</p>
-            </div>
-          </div>
-          <button 
-            onClick={signOut} 
-            className="w-full flex items-center justify-center py-3 text-sm font-bold text-red-400 hover:bg-red-500/10 rounded-xl transition-colors border border-transparent hover:border-red-500/20"
+        <div className="p-4 border-t border-slate-800">
+          <button
+            onClick={signOut}
+            className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-slate-300 font-black py-3 rounded-xl transition-colors border border-slate-700"
           >
-            <LogOut size={16} className="mr-2" /> Desconectar
+            <LogOut size={18} />
+            Cerrar Sesión
           </button>
         </div>
       </aside>
 
-      {/* Mobile Header & Sidebar */}
-      <div className="md:hidden fixed top-0 left-0 w-full h-16 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 z-50">
-        <div className="flex items-center">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-2">
-            <Shield className="text-white" size={16} />
-          </div>
-          <h2 className="text-lg font-black text-white">UnicOs</h2>
-        </div>
-        <button onClick={() => setIsSidebarOpen(true)} className="text-slate-400 p-2">
-          <Menu size={24} />
+      {/* Mobile Header */}
+      <header className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 z-30">
+        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2">
+          <Menu size={24} className="text-slate-300" />
         </button>
-      </div>
+        <h1 className="font-black text-white">UnicOs</h1>
+        <button onClick={signOut} className="p-2">
+          <LogOut size={22} className="text-slate-300" />
+        </button>
+      </header>
 
+      {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
-        <div className="md:hidden fixed inset-0 z-[60] flex">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)}></div>
-          <aside className="w-72 bg-slate-950 h-full flex flex-col relative z-10 border-r border-slate-800 shadow-2xl">
-             <div className="h-20 flex items-center justify-between px-6 border-b border-slate-800">
-                <div className="flex items-center">
-                  <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
-                    <Shield className="text-white" size={16} />
-                  </div>
-                  <h2 className="text-xl font-black text-white">UnicOs</h2>
-                </div>
-                <button onClick={() => setIsSidebarOpen(false)} className="text-slate-400"><X size={24}/></button>
-             </div>
-             <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-                <p className="px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Módulos</p>
-                {TABS.map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => { setActiveTab(t.id); setIsSidebarOpen(false); }}
-                    className={`w-full flex items-center px-4 py-3.5 rounded-xl transition-all duration-200 font-bold text-sm ${
-                      activeTab === t.id 
-                        ? "bg-blue-600/10 text-blue-400 border border-blue-500/20 shadow-inner" 
-                        : "text-slate-400 hover:bg-slate-900 hover:text-white"
-                    }`}
-                  >
-                    <span className={`mr-3 ${activeTab === t.id ? "text-blue-500" : "text-slate-500"}`}>{t.icon}</span>
-                    {t.label}
-                  </button>
-                ))}
-             </nav>
-             <div className="p-6 border-t border-slate-800">
-                <button onClick={signOut} className="w-full flex items-center justify-center py-3 text-sm font-bold text-red-400 hover:bg-red-500/10 rounded-xl transition-colors border border-transparent hover:border-red-500/20">
-                  <LogOut size={16} className="mr-2" /> Desconectar
+        <div className="md:hidden fixed inset-0 bg-black/60 z-40" onClick={() => setIsSidebarOpen(false)}>
+          <aside className="w-72 h-full bg-slate-950 border-r border-slate-800 p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-black text-white">Menú</h2>
+              <button onClick={() => setIsSidebarOpen(false)}>
+                <X size={20} className="text-slate-400" />
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-wider mb-2 block">Organización</label>
+              <div className="relative">
+                <select
+                  value={selectedOrgId}
+                  onChange={(e) => setSelectedOrgId(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-white font-bold px-4 py-3 rounded-xl appearance-none"
+                >
+                  {orgs.map((org) => (
+                    <option key={org.id} value={org.id}>{org.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" size={18} />
+              </div>
+            </div>
+
+            <nav className="space-y-2">
+              {TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => { setActiveTab(tab.id); setIsSidebarOpen(false); }}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${
+                    activeTab === tab.id ? "bg-blue-600 text-white" : "text-slate-400 hover:bg-slate-900"
+                  }`}
+                >
+                  {tab.icon}
+                  <span className="text-sm">{tab.label}</span>
                 </button>
-             </div>
+              ))}
+            </nav>
           </aside>
         </div>
       )}
 
-      {/* Main Content Area */}
-      <main className="flex-1 relative flex flex-col h-full overflow-hidden bg-[#0A0F1C] pt-16 md:pt-0">
-        {/* Decorative Grid */}
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] pointer-events-none mix-blend-overlay"></div>
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none"></div>
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-blue-500/20 opacity-30 blur-[120px] rounded-full pointer-events-none"></div>
-        
-        <div className="relative z-10 flex-1 overflow-auto">
-          <div className="max-w-7xl mx-auto p-4 md:p-8">
-            <TenantHeader orgs={orgs} orgId={selectedOrgId} />
-            <div className="mt-8">
-              {activeTab === "dashboard" && <ModuleDashboard orgId={selectedOrgId} />}
-              {activeTab === "orders" && <ModuleOrders orgId={selectedOrgId} />}
-              {activeTab === "products" && <ModuleProducts orgId={selectedOrgId} />}
-              {activeTab === "marketing" && <ModuleMarketing orgId={selectedOrgId} />}
-            </div>
-          </div>
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col pt-16 md:pt-0 overflow-hidden">
+        <div className="flex-1 overflow-y-auto p-6 md:p-10">
+          {activeTab === "dashboard" && <ModuleDashboard orgId={selectedOrgId} />}
+          {activeTab === "orders" && <ModuleOrders orgId={selectedOrgId} />}
+          {activeTab === "products" && <ModuleProducts orgId={selectedOrgId} />}
+          {activeTab === "marketing" && <ModuleMarketing orgId={selectedOrgId} />}
         </div>
+
+        <UnicoIAWidget orgId={selectedOrgId} />
       </main>
-
-      {/* Unico IA Floating Agent */}
-      <UnicoIAAgent orgId={selectedOrgId} />
     </div>
   );
 }
-
-function TenantHeader({ orgs, orgId }) {
-  const current = orgs.find(o => o.id === orgId);
-  return (
-    <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-800 pb-6">
-      <div>
-        <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight">{current?.name || "Empresa"}</h1>
-        <div className="flex items-center mt-2 text-sm text-slate-400 font-medium">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse mr-2 shadow-[0_0_8px_rgba(16,185,129,0.6)]"></div>
-          Sistemas Operativos Online
-        </div>
-      </div>
-      <div className="bg-slate-900 border border-slate-800 px-4 py-2.5 rounded-xl flex items-center text-sm font-bold text-slate-300 shadow-inner">
-        <Info size={16} className="text-blue-500 mr-2" /> ID: {current?.slug}
-      </div>
-    </div>
-  );
-}
-
-// --------------------------------------------------------
-// MÓDULOS DEL PANEL (Dashboard, Órdenes, Productos, Marketing)
-// --------------------------------------------------------
 
 function ModuleDashboard({ orgId }) {
-  const [stats, setStats] = useState({ revenue: 0, orders: 0, pending: 0, AOV: 0 });
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const fetchStats = async () => {
@@ -373,91 +337,96 @@ function ModuleDashboard({ orgId }) {
       .select("amount_total_mxn, status")
       .eq("organization_id", orgId);
 
-    let rev = 0, ord = 0, pend = 0;
-    if (data) {
-      data.forEach(o => {
-        if (o.status === "paid") { rev += Number(o.amount_total_mxn || 0); ord++; }
-        else pend++;
-      });
-    }
-    setStats({ revenue: rev, orders: ord, pending: pend, AOV: ord > 0 ? rev / ord : 0 });
+    const paid = (data || []).filter((o) => o.status === "paid");
+    const pending = (data || []).filter((o) => o.status === "pending");
+    const total = paid.reduce((acc, o) => acc + Number(o.amount_total_mxn || 0), 0);
+
+    setStats({
+      paidCount: paid.length,
+      pendingCount: pending.length,
+      totalRevenue: total,
+      totalOrders: (data || []).length
+    });
+
     setLoading(false);
   };
 
   useEffect(() => { fetchStats(); }, [orgId]);
 
+  if (loading) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 shadow-xl">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h3 className="text-2xl font-black text-white">Salud del Negocio</h3>
+            <p className="text-slate-500 font-medium text-sm">Cargando métricas en tiempo real...</p>
+          </div>
+          <div className="w-8 h-8 border-2 border-slate-700 border-t-blue-500 rounded-full animate-spin"></div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <h3 className="text-xl font-black text-white">Panorama General</h3>
-        <button onClick={fetchStats} className="p-2 bg-slate-800 border border-slate-700 hover:bg-slate-700 rounded-lg text-slate-400 transition-colors">
-          <RefreshCcw size={16} className={loading ? "animate-spin text-blue-500" : ""} />
+        <div>
+          <h3 className="text-3xl font-black text-white mb-1">Salud del Negocio</h3>
+          <p className="text-slate-500 font-medium text-sm">Indicadores principales de rendimiento.</p>
+        </div>
+        <button
+          onClick={fetchStats}
+          className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-black px-4 py-2 rounded-xl flex items-center gap-2 transition-colors border border-slate-700"
+        >
+          <RefreshCcw size={16} /> Actualizar
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        <StatCard title="Ingresos Brutos" value={moneyMXN(stats.revenue)} icon={<DollarSign size={24} className="text-emerald-400" />} color="emerald" loading={loading} trend="+12% vs mes pasado" />
-        <StatCard title="Órdenes Pagadas" value={num(stats.orders)} icon={<ShoppingCart size={24} className="text-blue-400" />} color="blue" loading={loading} />
-        <StatCard title="Ticket Promedio (AOV)" value={moneyMXN(stats.AOV)} icon={<TrendingUp size={24} className="text-purple-400" />} color="purple" loading={loading} />
-        <StatCard title="Órdenes Pendientes" value={num(stats.pending)} icon={<AlertTriangle size={24} className="text-yellow-400" />} color="yellow" loading={loading} alert={stats.pending > 0} />
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        <StatCard title="Ingresos Pagados" value={moneyMXN(stats.totalRevenue)} icon={<DollarSign size={22} />} color="blue" />
+        <StatCard title="Órdenes Pagadas" value={num(stats.paidCount)} icon={<CheckCircle size={22} />} color="emerald" />
+        <StatCard title="Órdenes Pendientes" value={num(stats.pendingCount)} icon={<AlertTriangle size={22} />} color="yellow" />
+        <StatCard title="Total Órdenes" value={num(stats.totalOrders)} icon={<TrendingUp size={22} />} color="purple" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
-        <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 blur-[100px] rounded-full pointer-events-none"></div>
-          <h3 className="text-lg font-black text-white mb-6 relative z-10 flex items-center">
-            <Sparkles className="text-blue-500 mr-2" size={20} /> Inteligencia Artificial Activa
-          </h3>
-          <p className="text-slate-400 text-sm leading-relaxed mb-6">
-            Unico IA está monitoreando en tiempo real las operaciones de esta organización. Pregúntale al asistente flotante sobre reportes de ventas, estatus de inventario o sugerencias de marketing para hoy.
-          </p>
-          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5 border-l-4 border-l-blue-500">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Diagnóstico Automático</p>
-            <p className="text-sm text-slate-300 font-medium">"El volumen de ventas se mantiene estable. Tienes {stats.pending} órdenes pendientes de cobro (OXXO/Transferencia) que podrías recuperar con una campaña de recordatorio."</p>
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-xl">
+        <div className="flex items-center mb-4">
+          <div className="w-10 h-10 bg-blue-600/20 border border-blue-500/30 rounded-xl flex items-center justify-center mr-4">
+            <Info size={18} className="text-blue-400" />
+          </div>
+          <div>
+            <h4 className="font-black text-white">Resumen Ejecutivo</h4>
+            <p className="text-slate-500 text-sm font-medium">Interpretación rápida de la IA.</p>
           </div>
         </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col items-center justify-center text-center">
-          <div className="w-24 h-24 relative mb-4">
-             <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-                <path className="text-slate-800" strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                <path className="text-blue-500" strokeWidth="3" strokeDasharray="85, 100" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-             </svg>
-             <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-2xl font-black text-white">85%</span>
-             </div>
-          </div>
-          <h4 className="text-white font-bold mb-1">Tasa de Conversión</h4>
-          <p className="text-xs text-slate-400">Excelente salud de carrito de compras.</p>
-        </div>
+        <p className="text-slate-300 text-sm leading-relaxed">
+          Tu negocio está operando con <span className="font-black text-white">{stats.paidCount}</span> órdenes pagadas y <span className="font-black text-white">{stats.pendingCount}</span> pendientes.
+          Los ingresos confirmados son <span className="font-black text-blue-400">{moneyMXN(stats.totalRevenue)}</span>.
+          Si deseas aumentar conversión hoy, activa un megáfono con una oferta simple y una fecha límite.
+        </p>
       </div>
     </div>
   );
 }
 
-function StatCard({ title, value, icon, color, loading, alert, trend }) {
-  const colorMap = {
-    emerald: "bg-emerald-500/10 border-emerald-500/20 text-emerald-500",
-    blue: "bg-blue-500/10 border-blue-500/20 text-blue-500",
-    purple: "bg-purple-500/10 border-purple-500/20 text-purple-500",
-    yellow: "bg-yellow-500/10 border-yellow-500/20 text-yellow-500",
+function StatCard({ title, value, icon, color }) {
+  const colors = {
+    blue: "bg-blue-600/10 border-blue-500/20 text-blue-400",
+    emerald: "bg-emerald-600/10 border-emerald-500/20 text-emerald-400",
+    yellow: "bg-yellow-600/10 border-yellow-500/20 text-yellow-400",
+    purple: "bg-purple-600/10 border-purple-500/20 text-purple-400",
   };
 
   return (
-    <div className={`bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:border-slate-700 ${alert ? 'ring-1 ring-yellow-500/30' : ''}`}>
-      <div className="flex justify-between items-start mb-4 relative z-10">
-        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">{title}</h4>
-        <div className={`p-2 rounded-xl border ${colorMap[color]}`}>{icon}</div>
-      </div>
-      {loading ? (
-        <div className="h-10 bg-slate-800 rounded-lg animate-pulse w-1/2"></div>
-      ) : (
-        <div>
-          <p className="text-3xl font-black text-white tracking-tight">{value}</p>
-          {trend && <p className="text-xs font-bold text-emerald-400 mt-2">{trend}</p>}
+    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden group hover:border-slate-700 transition-colors">
+      <div className={`absolute top-0 right-0 w-32 h-32 blur-3xl opacity-30 ${colors[color]}`}></div>
+      <div className="relative z-10 flex items-center justify-between mb-4">
+        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${colors[color]}`}>
+          {icon}
         </div>
-      )}
-      <div className={`absolute -bottom-10 -right-10 w-32 h-32 rounded-full blur-[60px] opacity-20 bg-${color}-500 pointer-events-none`}></div>
+      </div>
+      <p className="text-slate-500 text-xs font-black uppercase tracking-wider mb-2">{title}</p>
+      <h3 className="text-2xl font-black text-white">{value}</h3>
     </div>
   );
 }
@@ -474,6 +443,7 @@ function ModuleOrders({ orgId }) {
       .eq("organization_id", orgId)
       .order("created_at", { ascending: false })
       .limit(50);
+
     setOrders(data || []);
     setLoading(false);
   };
@@ -482,40 +452,39 @@ function ModuleOrders({ orgId }) {
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-xl overflow-hidden">
-      <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
+      <div className="p-6 md:p-8 border-b border-slate-800 flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-black text-white">Últimas 50 Órdenes</h3>
-          <p className="text-xs font-medium text-slate-500 mt-1">Sincronización en tiempo real con Stripe</p>
+          <h3 className="text-2xl font-black text-white">Órdenes (Stripe)</h3>
+          <p className="text-slate-500 text-sm font-medium">Últimas 50 órdenes registradas.</p>
         </div>
-        <button onClick={fetchOrders} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-slate-300 transition-colors">
-           <RefreshCcw size={18} className={loading ? "animate-spin" : ""} />
+        <button
+          onClick={fetchOrders}
+          className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-black px-4 py-2 rounded-xl flex items-center gap-2 transition-colors border border-slate-700"
+        >
+          <RefreshCcw size={16} /> Actualizar
         </button>
       </div>
 
       <div className="overflow-x-auto">
         {loading ? (
-          <div className="p-10 text-center text-slate-500 font-bold flex flex-col items-center">
-            <div className="w-8 h-8 border-4 border-slate-700 border-t-blue-500 rounded-full animate-spin mb-4"></div>
-            Cargando libro de ventas...
-          </div>
+          <div className="p-10 text-center text-slate-400 font-medium">Cargando órdenes...</div>
         ) : orders.length === 0 ? (
-          <div className="p-16 text-center text-slate-500">
-            <Package size={48} className="mx-auto mb-4 opacity-20" />
-            <p className="font-bold text-lg">No hay órdenes registradas</p>
+          <div className="p-10 text-center text-slate-400 font-medium">
+            No hay órdenes registradas aún.
             <p className="text-sm mt-1">Las ventas de esta organización aparecerán aquí.</p>
           </div>
         ) : (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-950 text-slate-400 text-xs uppercase tracking-wider font-bold border-b border-slate-800">
-                <th className="p-4 pl-6">Cliente</th>
-                <th className="p-4">Monto</th>
-                <th className="p-4">Estatus</th>
-                <th className="p-4">Resumen Items</th>
-                <th className="p-4">Fecha</th>
+          <table className="w-full text-sm">
+            <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] tracking-wider font-black">
+              <tr>
+                <th className="p-4 text-left pl-6">Cliente</th>
+                <th className="p-4 text-left">Total</th>
+                <th className="p-4 text-left">Estado</th>
+                <th className="p-4 text-left">Items</th>
+                <th className="p-4 text-left">Fecha</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/50">
+            <tbody>
               {orders.map((o) => (
                 <tr key={o.id} className="hover:bg-slate-800/30 transition-colors group">
                   <td className="p-4 pl-6">
@@ -639,188 +608,135 @@ function ModuleMarketing({ orgId }) {
             </button>
           </div>
         )}
-        {!activePromo && (
-           <div className="bg-slate-950 border border-slate-800 rounded-2xl p-6 flex items-center justify-center">
-              <p className="text-sm font-bold text-slate-500">El megáfono está apagado. No hay anuncios en la tienda.</p>
-           </div>
-        )}
       </div>
     </div>
   );
 }
 
-// --------------------------------------------------------
-// UNICO IA: Agente Autónomo (Componente Flotante)
-// --------------------------------------------------------
-function UnicoIAAgent({ orgId }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([]);
+function UnicoIAWidget({ orgId }) {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState([
+    { role: "assistant", content: "Soy Unico IA. Estoy listo para ayudarte con reportes, marketing y operaciones. ¿Qué quieres hacer hoy?" }
+  ]);
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const messagesEndRef = useRef(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const [sending, setSending] = useState(false);
+  const bottomRef = useRef(null);
 
   useEffect(() => {
-    if (isOpen && messages.length === 0) {
-      setMessages([{ role: "system", content: "¡Hola! Soy Unico IA. Estoy conectado a la base de datos de tu empresa. Puedes pedirme reportes de ventas, buscar un cliente o pedirme análisis de negocio. ¿En qué te ayudo hoy?" }]);
-    }
-  }, [isOpen]);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, open]);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const sendMessage = async () => {
-    if (!input.trim() || !orgId) return;
+  const send = async () => {
     const userMsg = input.trim();
+    if (!userMsg || !orgId) return;
+
+    setSending(true);
     setInput("");
-    setMessages(prev => [...prev, { role: "user", content: userMsg }]);
-    setLoading(true);
+    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      
-      // Control de latencia con AbortController para Netlify Edge (8s)
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-
       const res = await fetch("/api/ai", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
-          ...(token ? { "Authorization": `Bearer ${token}` } : {})
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ message: userMsg, organization_id: orgId }),
-        signal: controller.signal
       });
 
-      clearTimeout(timeoutId);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || "Error IA");
 
-      if (!res.ok) {
-        throw new Error(`Error HTTP: ${res.status}`);
-      }
-
-      const data = await res.json();
-      setMessages(prev => [...prev, { role: "system", content: data.reply || "No obtuve respuesta." }]);
-    } catch (error) {
-      console.error("AI Error:", error);
-      let errorMsg = "Hubo un error de conexión con mi servidor cerebral.";
-      if (error.name === 'AbortError') {
-         errorMsg = "La consulta tomó demasiado tiempo y fue interrumpida (Límite de 8 segundos en Netlify). Intenta con una pregunta más específica.";
-      }
-      setMessages(prev => [...prev, { role: "system", content: errorMsg, isError: true }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: json.reply }]);
+    } catch (e) {
+      setMessages((prev) => [...prev, { role: "assistant", content: "Error: " + (e?.message || "No se pudo contactar a Unico IA.") }]);
     } finally {
-      setLoading(false);
+      setSending(false);
     }
   };
 
   return (
     <>
-      {/* Botón Flotante */}
-      <button 
-        onClick={() => setIsOpen(true)}
-        className={`fixed bottom-6 right-6 w-14 h-14 bg-blue-600 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(37,99,235,0.5)] hover:scale-110 transition-transform z-40 ${isOpen ? 'scale-0' : 'scale-100'}`}
+      {/* Floating Button */}
+      <button
+        onClick={() => setOpen(true)}
+        className="fixed bottom-6 right-6 z-50 bg-blue-600 hover:bg-blue-500 text-white rounded-full w-14 h-14 shadow-2xl shadow-blue-500/30 flex items-center justify-center"
+        title="Abrir Unico IA"
       >
-        <Bot className="text-white" size={28} />
+        <Bot size={26} />
       </button>
 
-      {/* Ventana de Chat */}
-      <div className={`fixed bottom-6 right-6 w-[380px] h-[600px] max-w-[calc(100vw-32px)] max-h-[calc(100vh-32px)] bg-slate-900 border border-slate-700 rounded-3xl shadow-2xl flex flex-col z-50 overflow-hidden transition-all duration-300 origin-bottom-right ${isOpen ? 'scale-100 opacity-100' : 'scale-90 opacity-0 pointer-events-none'}`}>
-        
-        {/* Cabecera IA */}
-        <div className="bg-slate-950 p-4 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center">
-            <div className="w-10 h-10 bg-blue-600/20 border border-blue-500/50 rounded-xl flex items-center justify-center mr-3 relative overflow-hidden">
-               <Bot className="text-blue-400 relative z-10" size={20} />
-               <div className="absolute inset-0 bg-blue-500 opacity-20 animate-pulse"></div>
+      {/* Panel */}
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-xl bg-slate-950 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-600/20 border border-blue-500/30 rounded-xl flex items-center justify-center">
+                  <Sparkles size={18} className="text-blue-400" />
+                </div>
+                <div>
+                  <h4 className="font-black text-white">Unico IA</h4>
+                  <p className="text-xs text-slate-500 font-medium">Agente Operativo Autónomo</p>
+                </div>
+              </div>
+              <button onClick={() => setOpen(false)} className="p-2 hover:bg-slate-900 rounded-xl">
+                <X size={18} className="text-slate-400" />
+              </button>
             </div>
-            <div>
-              <h3 className="text-white font-black leading-tight flex items-center">Unico IA <Sparkles size={12} className="text-blue-400 ml-1" /></h3>
-              <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest flex items-center">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1 animate-ping"></span> En línea
-              </p>
+
+            <div className="p-5 h-[52vh] md:h-[60vh] overflow-y-auto space-y-4">
+              {messages.map((m, idx) => (
+                <div
+                  key={idx}
+                  className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                    m.role === "assistant"
+                      ? "bg-slate-900 border border-slate-800 text-slate-200"
+                      : "bg-blue-600 text-white ml-auto"
+                  }`}
+                >
+                  {m.content}
+                </div>
+              ))}
+              <div ref={bottomRef} />
+            </div>
+
+            <div className="p-4 border-t border-slate-800 flex gap-3">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+                className="flex-1 bg-slate-900 border border-slate-700 text-white font-bold px-4 py-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={orgId ? "Escribe una instrucción..." : "Selecciona una organización primero..."}
+                disabled={!orgId || sending}
+              />
+              <button
+                onClick={send}
+                disabled={!orgId || sending || !input.trim()}
+                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-black px-5 py-3 rounded-xl flex items-center gap-2"
+              >
+                <Send size={16} /> {sending ? "Enviando" : "Enviar"}
+              </button>
             </div>
           </div>
-          <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white bg-slate-800 p-2 rounded-lg transition-colors">
-            <X size={18} />
-          </button>
         </div>
-
-        {/* Mensajes */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-900 scroll-smooth">
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] p-3.5 rounded-2xl text-sm font-medium leading-relaxed ${
-                msg.role === "user" 
-                  ? "bg-blue-600 text-white rounded-br-sm shadow-lg shadow-blue-900/20" 
-                  : msg.isError 
-                    ? "bg-red-500/10 border border-red-500/20 text-red-400 rounded-bl-sm"
-                    : "bg-slate-800 border border-slate-700 text-slate-200 rounded-bl-sm"
-              }`}>
-                {msg.content}
-              </div>
-            </div>
-          ))}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-slate-800 border border-slate-700 p-4 rounded-2xl rounded-bl-sm flex space-x-2 items-center">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-100"></div>
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce delay-200"></div>
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input */}
-        <div className="p-4 bg-slate-950 border-t border-slate-800">
-          <form 
-            onSubmit={(e) => { e.preventDefault(); sendMessage(); }}
-            className="flex items-center bg-slate-900 border border-slate-700 p-1.5 rounded-2xl focus-within:ring-2 focus-within:ring-blue-500/50 focus-within:border-blue-500 transition-all"
-          >
-            <input
-              type="text"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder="Pregúntale a Unico IA..."
-              className="flex-1 bg-transparent border-none text-white text-sm px-3 focus:outline-none placeholder-slate-500"
-              disabled={loading}
-            />
-            <button 
-              type="submit" 
-              disabled={loading || !input.trim()}
-              className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white disabled:opacity-50 hover:bg-blue-500 transition-colors flex-shrink-0"
-            >
-              <Send size={18} className="ml-1" />
-            </button>
-          </form>
-        </div>
-      </div>
+      )}
     </>
   );
 }
 
-export default function App() {
+export default function Home() {
   const [session, setSession] = useState(null);
-  const [loadingSession, setLoadingSession] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoadingSession(false);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-    return () => subscription.unsubscribe();
+    supabase.auth.getSession().then(({ data }) => setSession(data?.session || null));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => sub?.subscription?.unsubscribe?.();
   }, []);
 
-  if (loadingSession) return <LoadingScreen text="Iniciando Enlace Cifrado..." />;
   if (!session) return <LoginScreen onLogin={setSession} />;
   return <AdminDashboard session={session} />;
 }
