@@ -1,12 +1,9 @@
-export const dynamic = "force-dynamic";
+// src/app/api/ai/route.js
+export const dynamic = 'force-dynamic'; // Vacuna Riesgo 1: Evita que Next.js cachee las respuestas de la IA
 
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { serverSupabase, requireUserFromToken } from "@/lib/serverSupabase";
-
-function json(status, payload) {
-  return NextResponse.json(payload, { status });
-}
 
 function getBearerToken(req) {
   const h = req.headers.get("authorization") || "";
@@ -14,167 +11,106 @@ function getBearerToken(req) {
   return m ? m[1] : "";
 }
 
-const clampStr = (v, max = 2000) => String(v || "").trim().slice(0, max);
-
 export async function POST(req) {
   try {
+    const sb = serverSupabase();
+    const token = getBearerToken(req);
+
+    const { user, error: authErr } = await requireUserFromToken(sb, token);
+    if (authErr) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
     const body = await req.json().catch(() => ({}));
 
-    // FIX REAL: acepta ambos contratos (front viejo y nuevo)
-    const prompt = clampStr(body.prompt ?? body.message ?? body.text, 2000);
-    const orgId = clampStr(
-      body.orgId ?? body.organization_id ?? body.organizationId ?? body.org_id,
-      128
-    );
+    // ✅ FIX REAL: compatibilidad con el contrato viejo y el nuevo
+    const prompt = String(body.prompt ?? body.message ?? body.text ?? "").trim();
+    const orgId = String(
+      body.orgId ?? body.organization_id ?? body.organizationId ?? body.org_id ?? ""
+    ).trim();
 
     if (!prompt || !orgId) {
-      return json(400, {
-        error:
-          "Faltan datos. Se requiere 'message' o 'prompt' y 'organization_id' u 'orgId'.",
-      });
+      return NextResponse.json(
+        { error: "Faltan datos (se requiere prompt/message y orgId/organization_id)" },
+        { status: 400 }
+      );
     }
 
-    // Validación llaves IA
+    // ✅ FIX REAL: no crashear si falta GEMINI_API_KEY en producción
     const geminiKey = process.env.GEMINI_API_KEY;
     if (!geminiKey) {
-      return json(503, {
-        error:
-          "Unico IA está desconectada: falta GEMINI_API_KEY en variables de entorno (Netlify Production).",
-      });
+      return NextResponse.json(
+        { error: "Unico IA desconectada: falta GEMINI_API_KEY en variables de entorno (Netlify Production)." },
+        { status: 503 }
+      );
     }
 
-    // Cliente Supabase server-side (requiere secret key en Netlify)
-    let sb;
-    try {
-      sb = serverSupabase();
-    } catch (e) {
-      return json(503, { error: e?.message || "Falta SUPABASE_SECRET_KEY en Netlify." });
-    }
+    const genAI = new GoogleGenerativeAI(geminiKey);
 
-    // Auth real por JWT
-    const token = getBearerToken(req);
-    const { user, error: authErr } = await requireUserFromToken(sb, token);
-    if (authErr) return json(401, { error: "No autorizado. Vuelve a iniciar sesión." });
+    const model = genAI.getGenerativeModel({
+      model: process.env.GEMINI_MODEL || "gemini-1.5-flash",
+      systemInstruction:
+        "Eres 'Unico IA', el agente autónomo de élite del panel UnicOs. Administras la tienda 'Score Store'. Tu tono es profesional, conciso y tecnológico. Respondes sin tecnicismos innecesarios y con pasos accionables. Si actualizas una promo, debe reflejarse en el módulo 'Megáfono Global'."
+    });
 
-    // -----------------------------
-    // TOOLS (acciones reales)
-    // -----------------------------
-    const tool_salesSummary = async () => {
+    const getMetricsTool = async () => {
       const { data, error } = await sb
         .from("orders")
-        .select("amount_total_mxn,status")
-        .eq("organization_id", orgId);
+        .select("amount_total_mxn")
+        .eq("organization_id", orgId)
+        .eq("status", "paid");
 
       if (error) return `No pude leer ventas (orders). Motivo: ${error.message}`;
 
-      const paid = (data || []).filter((o) => String(o.status) === "paid");
-      const total = paid.reduce((acc, o) => acc + Number(o.amount_total_mxn || 0), 0);
-
-      return `Ventas pagadas: ${paid.length} pedidos. Ingresos: $${total.toLocaleString("es-MX")} MXN.`;
+      const total = (data || []).reduce((acc, curr) => acc + Number(curr.amount_total_mxn || 0), 0);
+      return `Los ingresos totales pagados son $${total.toLocaleString("es-MX")} MXN de ${data?.length || 0} pedidos.`;
     };
 
-    const tool_setPromo = async (text) => {
-      const promoText = clampStr(text, 160);
+    // ✅ FIX REAL: usar el MISMO esquema que usa el front (site_settings: key/value)
+    const updatePromoTool = async (promoText) => {
+      const cleanText = String(promoText || "").trim().slice(0, 160);
 
       const { error } = await sb
         .from("site_settings")
         .upsert(
           {
             organization_id: orgId,
-            promo_active: true,
-            promo_text: promoText,
-            updated_at: new Date().toISOString(),
+            key: "active_promo",
+            value: cleanText,
+            updated_at: new Date().toISOString()
           },
-          { onConflict: "organization_id" }
+          { onConflict: "organization_id, key" }
         );
 
       if (error) return `No pude activar el megáfono. Motivo: ${error.message}`;
-      return `Megáfono ACTIVADO. Mensaje: "${promoText}"`;
+      return `Éxito. El megáfono ahora está activo y dice: "${cleanText}".`;
     };
 
-    const tool_disablePromo = async () => {
-      const { error } = await sb
-        .from("site_settings")
-        .upsert(
-          {
-            organization_id: orgId,
-            promo_active: false,
-            promo_text: null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "organization_id" }
-        );
-
-      if (error) return `No pude apagar el megáfono. Motivo: ${error.message}`;
-      return "Megáfono APAGADO.";
-    };
-
-    const tool_lowStock = async () => {
-      // Si products no existe en tu DB, esto regresará error claro
-      const { data, error } = await sb
-        .from("products")
-        .select("name,sku,stock")
-        .eq("organization_id", orgId)
-        .is("deleted_at", null)
-        .order("stock", { ascending: true })
-        .limit(10);
-
-      if (error) return `No pude leer inventario (products). Motivo: ${error.message}`;
-      const low = (data || []).filter((p) => Number(p.stock || 0) <= 5);
-      if (!low.length) return "Inventario OK: no hay productos críticos (≤5).";
-      return `Stock crítico (≤5):\n- ${low
-        .map((p) => `${p.sku || "SIN-SKU"} · ${p.name} · stock=${p.stock}`)
-        .join("\n- ")}`;
-    };
-
-    // Router simple de intención (sin “magia”)
+    let finalResponse = "";
     const p = prompt.toLowerCase();
-    let toolContext = "";
 
-    if (p.includes("venta") || p.includes("ingreso") || p.includes("resumen") || p.includes("total")) {
-      toolContext = await tool_salesSummary();
-    } else if (p.includes("promo") || p.includes("megáfono") || p.includes("cintillo")) {
-      // “apaga / desactiva”
-      if (p.includes("apaga") || p.includes("desactiva") || p.includes("quita")) {
-        toolContext = await tool_disablePromo();
-      } else {
-        // si no trae texto explícito, Gemini genera el copy y luego lo aplicamos
-        toolContext = "El usuario quiere activar una promo.";
-      }
-    } else if (p.includes("stock") || p.includes("inventario")) {
-      toolContext = await tool_lowStock();
-    }
-
-    // Gemini (respuesta ejecutiva)
-    const genAI = new GoogleGenerativeAI(geminiKey);
-    const modelName = process.env.GEMINI_MODEL || "gemini-1.5-flash";
-    const model = genAI.getGenerativeModel({
-      model: modelName,
-      systemInstruction:
-        "Eres 'Unico IA', el agente ejecutivo-operativo del panel UnicOs. Respondes claro, sin tecnicismos innecesarios, con pasos accionables. Si el usuario pide acciones (promo/stock/ventas), confirma lo ejecutado o explica por qué no se pudo.",
-    });
-
-    // Si pidió promo pero no dio texto, generamos uno y lo activamos
-    if (toolContext === "El usuario quiere activar una promo.") {
-      const copyResult = await model.generateContent(
-        `Genera SOLO una frase corta (máximo 120 caracteres), persuasiva, en MAYÚSCULAS con 1-2 emojis para un cintillo de tienda. Contexto: "${prompt}"`
+    if (p.includes("venta") || p.includes("ingreso") || p.includes("dinero") || p.includes("resumen")) {
+      const metrics = await getMetricsTool();
+      const result = await model.generateContent(
+        `El usuario preguntó: "${prompt}". Los datos reales del sistema son: ${metrics}. Responde de forma ejecutiva y con siguiente acción recomendada.`
       );
-      const copy = clampStr(copyResult.response.text(), 160);
-      toolContext = await tool_setPromo(copy);
-      return json(200, { reply: `Listo.\n${toolContext}` });
+      finalResponse = result.response.text();
+    }
+    else if (p.includes("promo") || p.includes("marketing") || p.includes("cintillo") || p.includes("megáfono")) {
+      const copyResult = await model.generateContent(
+        `El usuario quiere una promoción: "${prompt}". Escribe SOLO UNA FRASE CORTA, persuasiva, en MAYÚSCULAS con 1-2 emojis para un cintillo de tienda online. Nada más.`
+      );
+      const copy = copyResult.response.text().trim();
+      const status = await updatePromoTool(copy);
+      finalResponse = `Listo. ${status}`;
+    }
+    else {
+      const result = await model.generateContent(prompt);
+      finalResponse = result.response.text();
     }
 
-    const finalPrompt =
-      toolContext
-        ? `Usuario: "${prompt}"\n\nDatos/Acciones reales del sistema:\n${toolContext}\n\nResponde con un resumen ejecutivo + siguiente acción recomendada.`
-        : prompt;
+    return NextResponse.json({ reply: finalResponse });
 
-    const result = await model.generateContent(finalPrompt);
-    const reply = clampStr(result?.response?.text?.() || result?.response?.text?.() || result?.response?.text?.(), 2500);
-
-    return json(200, { reply: reply || "No obtuve respuesta." });
   } catch (error) {
     console.error("Error en Unico IA:", error);
-    return json(500, { error: "Error en el procesamiento neuronal.", detail: error?.message || String(error) });
+    return NextResponse.json({ error: "Error en el procesamiento neuronal." }, { status: 500 });
   }
 }
