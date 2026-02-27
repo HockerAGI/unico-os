@@ -2,6 +2,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { serverSupabase, requireUserFromToken } from "@/lib/serverSupabase";
 
 function json(status, payload) {
@@ -15,30 +16,17 @@ function getBearerToken(req) {
 }
 
 const clamp = (v, n = 2500) => String(v ?? "").trim().slice(0, n);
+
+// Defaults robustos (Feb 2026)
 const DEFAULT_MODEL = "gemini-2.5-flash-lite";
+const TIMEOUT_MS = 16000;
 
-async function geminiGenerate({ apiKey, model, system, userText }) {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-    model
-  )}:generateContent`;
-
-  const payload = {
-    systemInstruction: { parts: [{ text: system }] },
-    contents: [{ role: "user", parts: [{ text: userText }] }],
-    generationConfig: { temperature: 0.4, maxOutputTokens: 700 },
-  };
-
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify(payload),
+function withTimeout(promise, ms, label = "timeout") {
+  let t;
+  const timeout = new Promise((_, rej) => {
+    t = setTimeout(() => rej(new Error(label)), ms);
   });
-
-  const data = await res.json().catch(() => ({}));
-  return { ok: res.ok, status: res.status, data };
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
 }
 
 export async function POST(req) {
@@ -61,17 +49,22 @@ export async function POST(req) {
 
     const geminiKey = String(process.env.GEMINI_API_KEY || "").trim();
     if (!geminiKey) {
-      return json(503, {
-        error: "Unico IA está desconectada: falta GEMINI_API_KEY en variables de entorno (Netlify).",
-      });
+      return json(503, { error: "Unico IA está desconectada: falta GEMINI_API_KEY en Netlify." });
     }
 
     const modelName = String(process.env.GEMINI_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
 
-    // TOOLS (acciones reales)
+    const genAI = new GoogleGenerativeAI(geminiKey);
+    const model = genAI.getGenerativeModel({
+      model: modelName,
+      systemInstruction:
+        "Eres 'Unico IA', el agente ejecutivo-operativo del panel UnicOs. Hablas claro, sin tecnicismos. Si ejecutas acciones (promo, pixel, envíos, clientes, ventas), confirma lo hecho o explica el bloqueo con una solución.",
+    });
+
+    // === TOOLS (acciones reales) ===
     const tool_salesSummary = async () => {
       const { data, error } = await sb.from("orders").select("amount_total_mxn,status").eq("organization_id", orgId);
-      if (error) return `No pude leer ventas (orders). Motivo: ${error.message}`;
+      if (error) return `No pude leer ventas. Motivo: ${error.message}`;
 
       const rows = data || [];
       const paid = rows.filter((o) => String(o.status) === "paid");
@@ -85,11 +78,7 @@ export async function POST(req) {
       const promoText = clamp(text, 160);
       const { error } = await sb
         .from("site_settings")
-        .upsert(
-          { organization_id: orgId, promo_active: true, promo_text: promoText, updated_at: new Date().toISOString() },
-          { onConflict: "organization_id" }
-        );
-
+        .upsert({ organization_id: orgId, promo_active: true, promo_text: promoText, updated_at: new Date().toISOString() }, { onConflict: "organization_id" });
       if (error) return `No pude activar el megáfono. Motivo: ${error.message}`;
       return `Megáfono ACTIVADO. Mensaje: "${promoText}"`;
     };
@@ -97,11 +86,7 @@ export async function POST(req) {
     const tool_disablePromo = async () => {
       const { error } = await sb
         .from("site_settings")
-        .upsert(
-          { organization_id: orgId, promo_active: false, promo_text: null, updated_at: new Date().toISOString() },
-          { onConflict: "organization_id" }
-        );
-
+        .upsert({ organization_id: orgId, promo_active: false, promo_text: null, updated_at: new Date().toISOString() }, { onConflict: "organization_id" });
       if (error) return `No pude apagar el megáfono. Motivo: ${error.message}`;
       return "Megáfono APAGADO.";
     };
@@ -111,7 +96,6 @@ export async function POST(req) {
       const { error } = await sb
         .from("site_settings")
         .upsert({ organization_id: orgId, pixel_id: pixelId, updated_at: new Date().toISOString() }, { onConflict: "organization_id" });
-
       if (error) return `No pude guardar el Pixel. Motivo: ${error.message}`;
       return `Pixel guardado: ${pixelId}`;
     };
@@ -124,7 +108,7 @@ export async function POST(req) {
         .order("updated_at", { ascending: false })
         .limit(20);
 
-      if (error) return `No pude leer envíos (shipping_labels). Motivo: ${error.message}`;
+      if (error) return `No pude leer envíos. Motivo: ${error.message}`;
 
       const rows = data || [];
       if (!rows.length) return "Envíos: sin registros todavía.";
@@ -132,7 +116,7 @@ export async function POST(req) {
       const pending = rows.filter((r) => !String(r.status || "").toUpperCase().includes("DELIVER"));
       if (!pending.length) return "Envíos: todo está en estado final (entregado / finalizado).";
 
-      return `Envios pendientes (últimos ${pending.length}):\n- ${pending
+      return `Envíos pendientes:\n- ${pending
         .slice(0, 10)
         .map((r) => `${r.status || ""} · tracking=${r.tracking_number || "-"} · session=${r.stripe_session_id || "-"}`)
         .join("\n- ")}`;
@@ -146,7 +130,7 @@ export async function POST(req) {
         .eq("status", "paid")
         .limit(500);
 
-      if (error) return `No pude leer clientes (orders). Motivo: ${error.message}`;
+      if (error) return `No pude leer clientes. Motivo: ${error.message}`;
 
       const map = new Map();
       for (const o of data || []) {
@@ -161,17 +145,17 @@ export async function POST(req) {
       const top = Array.from(map.values()).sort((a, b) => b.total - a.total).slice(0, 5);
       if (!top.length) return "Clientes: todavía no hay ventas pagadas.";
 
-      return `Top clientes (pagado):\n- ${top.map((c) => `${c.name} · ${c.orders} compras · $${c.total.toLocaleString("es-MX")} MXN`).join("\n- ")}`;
+      return `Top clientes:\n- ${top.map((c) => `${c.name} · ${c.orders} compras · $${c.total.toLocaleString("es-MX")} MXN`).join("\n- ")}`;
     };
 
-    // Router de intención
+    // Router intención
     const p = prompt.toLowerCase();
     let toolContext = "";
 
     if (p.includes("promo") || p.includes("megáfono") || p.includes("cintillo")) {
       if (p.includes("apaga") || p.includes("desactiva") || p.includes("quita")) toolContext = await tool_disablePromo();
       else {
-        const m = prompt.match(/\"([^\"]{3,160})\"/);
+        const m = prompt.match(/"([^"]{3,160})"/);
         toolContext = m?.[1] ? await tool_setPromo(m[1]) : "El usuario quiere activar una promo.";
       }
     }
@@ -195,57 +179,50 @@ export async function POST(req) {
 
     // Auto-copy para promo
     if (toolContext === "El usuario quiere activar una promo.") {
-      const system = "Eres Unico IA. Genera solo una frase corta (máx 120 caracteres), en MAYÚSCULAS, con 1-2 emojis, para un cintillo de tienda. No agregues explicación.";
-      const r = await geminiGenerate({ apiKey: geminiKey, model: modelName, system, userText: `Contexto: ${prompt}` });
+      const copyResult = await withTimeout(
+        model.generateContent(
+          `Genera SOLO una frase corta (máximo 120 caracteres), persuasiva, en MAYÚSCULAS con 1-2 emojis para un cintillo de tienda. Contexto: "${prompt}"`
+        ),
+        TIMEOUT_MS,
+        "gemini_timeout"
+      );
 
-      if (!r.ok) {
-        const msg = String(r.data?.error?.message || "");
-        return json(503, {
-          error: r.status === 404
-            ? "La IA está configurada con un modelo retirado. Actualiza GEMINI_MODEL (recomendado: gemini-2.5-flash-lite)."
-            : "No pude generar copy de promo. Intenta otra vez.",
-          detail: msg.slice(0, 240) || `HTTP ${r.status}`,
-        });
-      }
-
-      const copy =
-        clamp(r.data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || r.data?.candidates?.[0]?.content?.parts?.[0]?.text || "", 160);
-
-      const setRes = await tool_setPromo(copy);
+      const copy = clamp(copyResult?.response?.text?.() || "", 160);
+      const setRes = await tool_setPromo(copy || "🔥 OFERTA ACTIVA HOY 🔥");
       return json(200, { reply: `Listo.\n${setRes}` });
     }
 
     if (toolContext === "El usuario pidió configurar Pixel, pero no dio el ID.") {
-      return json(200, { reply: "Pásame el número del Pixel (solo dígitos) y lo guardo. Ejemplo: 123456789012345." });
+      return json(200, { reply: "Pásame el número del Pixel (solo dígitos) y lo guardo. Ej: 123456789012345." });
     }
-
-    const systemInstruction =
-      "Eres 'Unico IA', el agente ejecutivo-operativo del panel UnicOs. Hablas claro, sin tecnicismos. Si ejecutas acciones (promo, pixel, envíos, clientes, ventas), confirma lo hecho o explica el bloqueo con una solución.";
 
     const finalPrompt = toolContext
-      ? `Usuario: "${prompt}"\n\nDatos/Acciones reales del sistema:\n${toolContext}\n\nResponde con: (1) resumen ejecutivo corto, (2) siguiente acción recomendada, (3) un botón/acción concreta que el usuario pueda hacer en UnicOs.`
+      ? `Usuario: "${prompt}"\n\nDatos/Acciones reales del sistema:\n${toolContext}\n\nResponde con: (1) resumen corto, (2) siguiente acción recomendada, (3) acción concreta dentro de UnicOs.`
       : prompt;
 
-    const r = await geminiGenerate({ apiKey: geminiKey, model: modelName, system: systemInstruction, userText: finalPrompt });
+    let result;
+    try {
+      result = await withTimeout(model.generateContent(finalPrompt), TIMEOUT_MS, "gemini_timeout");
+    } catch (e) {
+      const msg = String(e?.message || e);
+      const lower = msg.toLowerCase();
 
-    if (!r.ok) {
-      const msg = String(r.data?.error?.message || "");
-      return json(503, {
-        error: r.status === 404
-          ? "La IA está configurada con un modelo retirado. Actualiza GEMINI_MODEL (recomendado: gemini-2.5-flash-lite)."
-          : "Unico IA no respondió. Intenta otra vez.",
-        detail: msg.slice(0, 240) || `HTTP ${r.status}`,
-      });
+      if (lower.includes("404") || lower.includes("not found") || lower.includes("model")) {
+        return json(503, {
+          error: `El modelo configurado no existe o fue retirado. Cambia GEMINI_MODEL (recomendado: ${DEFAULT_MODEL}).`,
+          detail: msg.slice(0, 220),
+        });
+      }
+
+      if (lower.includes("timeout")) {
+        return json(503, { error: "Unico IA tardó demasiado. Intenta otra vez.", detail: msg.slice(0, 220) });
+      }
+
+      return json(503, { error: "Unico IA no respondió. Intenta otra vez.", detail: msg.slice(0, 220) });
     }
 
-    const reply = clamp(
-      r.data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ||
-        r.data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-        "Sin respuesta.",
-      2500
-    );
-
-    return json(200, { reply });
+    const reply = clamp(result?.response?.text?.() || "", 2500);
+    return json(200, { reply: reply || "Sin respuesta." });
   } catch (e) {
     console.error("[Unico IA] error:", e);
     return json(500, { error: "Error interno en Unico IA.", detail: String(e?.message || e) });
