@@ -3,39 +3,60 @@
 @tailwind components;
 @tailwind utilities;
 
-:root{
-  --unico-red:#E10600;
-  --bg:#f8fafc; /* slate-50 vibe */
-  --text:#0f172a; /* slate-900 vibe */
+:root {
+  --unico-red: #e10600;
+
+  /* Dark-first (PWA/admin) */
+  --bg: #0b1220;   /* deep slate */
+  --text: #e2e8f0; /* slate-200 */
+
+  color-scheme: dark;
 }
 
-html, body{
+html,
+body {
   height: 100%;
 }
 
-body{
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
   background: var(--bg);
   color: var(--text);
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Safe-area (iOS) */
-body{
+body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Better tap */
-button, a{
+button,
+a {
   -webkit-tap-highlight-color: transparent;
 }
 
 /* Scrollbar */
-*::-webkit-scrollbar{ width: 10px; height: 10px; }
-*::-webkit-scrollbar-thumb{ background: rgba(15, 23, 42, 0.25); border-radius: 999px; }
-*::-webkit-scrollbar-track{ background: transparent; }
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(226, 232, 240, 0.18);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
 
 /* Selection */
-::selection{
+::selection {
   background: rgba(225, 6, 0, 0.18);
 }
