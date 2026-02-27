@@ -1,9 +1,13 @@
 // src/app/api/ai/route.js
-export const dynamic = 'force-dynamic'; // Vacuna Riesgo 1: Evita que Next.js cachee las respuestas de la IA
+export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { serverSupabase, requireUserFromToken } from "@/lib/serverSupabase";
+
+function json(status, payload) {
+  return NextResponse.json(payload, { status });
+}
 
 function getBearerToken(req) {
   const h = req.headers.get("authorization") || "";
@@ -11,106 +15,228 @@ function getBearerToken(req) {
   return m ? m[1] : "";
 }
 
+const clamp = (v, n = 2500) => String(v ?? "").trim().slice(0, n);
+
 export async function POST(req) {
   try {
     const sb = serverSupabase();
     const token = getBearerToken(req);
 
     const { user, error: authErr } = await requireUserFromToken(sb, token);
-    if (authErr) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    if (authErr) return json(401, { error: "No autorizado. Inicia sesión otra vez." });
 
     const body = await req.json().catch(() => ({}));
-
-    // ✅ FIX REAL: compatibilidad con el contrato viejo y el nuevo
-    const prompt = String(body.prompt ?? body.message ?? body.text ?? "").trim();
-    const orgId = String(
-      body.orgId ?? body.organization_id ?? body.organizationId ?? body.org_id ?? ""
-    ).trim();
+    const prompt = clamp(body.prompt ?? body.message ?? body.text, 2000);
+    const orgId = clamp(body.orgId ?? body.organization_id ?? body.organizationId ?? body.org_id, 128);
 
     if (!prompt || !orgId) {
-      return NextResponse.json(
-        { error: "Faltan datos (se requiere prompt/message y orgId/organization_id)" },
-        { status: 400 }
-      );
+      return json(400, {
+        error: "Faltan datos. Se requiere 'message' o 'prompt' y 'organization_id' u 'orgId'.",
+      });
     }
 
-    // ✅ FIX REAL: no crashear si falta GEMINI_API_KEY en producción
     const geminiKey = process.env.GEMINI_API_KEY;
     if (!geminiKey) {
-      return NextResponse.json(
-        { error: "Unico IA desconectada: falta GEMINI_API_KEY en variables de entorno (Netlify Production)." },
-        { status: 503 }
-      );
+      return json(503, {
+        error: "Unico IA está desconectada: falta GEMINI_API_KEY en variables de entorno (Netlify).",
+      });
     }
 
+    const modelName = process.env.GEMINI_MODEL || "gemini-1.5-flash";
     const genAI = new GoogleGenerativeAI(geminiKey);
-
     const model = genAI.getGenerativeModel({
-      model: process.env.GEMINI_MODEL || "gemini-1.5-flash",
+      model: modelName,
       systemInstruction:
-        "Eres 'Unico IA', el agente autónomo de élite del panel UnicOs. Administras la tienda 'Score Store'. Tu tono es profesional, conciso y tecnológico. Respondes sin tecnicismos innecesarios y con pasos accionables. Si actualizas una promo, debe reflejarse en el módulo 'Megáfono Global'."
+        "Eres 'Unico IA', el agente ejecutivo-operativo del panel UnicOs. Hablas claro, sin tecnicismos. Si ejecutas acciones (promo, pixel, envíos, clientes, ventas), confirma lo hecho o explica el bloqueo con una solución.",
     });
 
-    const getMetricsTool = async () => {
+    const tool_salesSummary = async () => {
       const { data, error } = await sb
         .from("orders")
-        .select("amount_total_mxn")
-        .eq("organization_id", orgId)
-        .eq("status", "paid");
+        .select("amount_total_mxn,status")
+        .eq("organization_id", orgId);
 
       if (error) return `No pude leer ventas (orders). Motivo: ${error.message}`;
 
-      const total = (data || []).reduce((acc, curr) => acc + Number(curr.amount_total_mxn || 0), 0);
-      return `Los ingresos totales pagados son $${total.toLocaleString("es-MX")} MXN de ${data?.length || 0} pedidos.`;
+      const rows = data || [];
+      const paid = rows.filter((o) => String(o.status) === "paid");
+      const pending = rows.filter((o) => String(o.status) !== "paid");
+      const total = paid.reduce((acc, o) => acc + Number(o.amount_total_mxn || 0), 0);
+
+      return `Ventas: ${paid.length} pagadas, ${pending.length} no pagadas. Ingresos pagados: $${total.toLocaleString("es-MX")} MXN.`;
     };
 
-    // ✅ FIX REAL: usar el MISMO esquema que usa el front (site_settings: key/value)
-    const updatePromoTool = async (promoText) => {
-      const cleanText = String(promoText || "").trim().slice(0, 160);
-
+    const tool_setPromo = async (text) => {
+      const promoText = clamp(text, 160);
       const { error } = await sb
         .from("site_settings")
         .upsert(
           {
             organization_id: orgId,
-            key: "active_promo",
-            value: cleanText,
-            updated_at: new Date().toISOString()
+            promo_active: true,
+            promo_text: promoText,
+            updated_at: new Date().toISOString(),
           },
-          { onConflict: "organization_id, key" }
+          { onConflict: "organization_id" }
         );
 
       if (error) return `No pude activar el megáfono. Motivo: ${error.message}`;
-      return `Éxito. El megáfono ahora está activo y dice: "${cleanText}".`;
+      return `Megáfono ACTIVADO. Mensaje: "${promoText}"`;
     };
 
-    let finalResponse = "";
+    const tool_disablePromo = async () => {
+      const { error } = await sb
+        .from("site_settings")
+        .upsert(
+          {
+            organization_id: orgId,
+            promo_active: false,
+            promo_text: null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "organization_id" }
+        );
+
+      if (error) return `No pude apagar el megáfono. Motivo: ${error.message}`;
+      return "Megáfono APAGADO.";
+    };
+
+    const tool_setPixel = async (pixelIdRaw) => {
+      const pixelId = clamp(pixelIdRaw, 80);
+      const { error } = await sb
+        .from("site_settings")
+        .upsert(
+          {
+            organization_id: orgId,
+            pixel_id: pixelId,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "organization_id" }
+        );
+
+      if (error) return `No pude guardar el Pixel. Motivo: ${error.message}`;
+      return `Pixel guardado: ${pixelId}`;
+    };
+
+    const tool_pendingShipments = async () => {
+      const { data, error } = await sb
+        .from("shipping_labels")
+        .select("stripe_session_id,tracking_number,status,updated_at")
+        .eq("org_id", orgId)
+        .order("updated_at", { ascending: false })
+        .limit(20);
+
+      if (error) return `No pude leer envíos (shipping_labels). Motivo: ${error.message}`;
+
+      const rows = data || [];
+      if (!rows.length) return "Envíos: sin registros todavía.";
+
+      const pending = rows.filter(
+        (r) => !String(r.status || "").toUpperCase().includes("DELIVER")
+      );
+
+      if (!pending.length) return "Envíos: todo está en estado final (entregado / finalizado).";
+
+      return `Envios pendientes (últimos ${pending.length}):\n- ${pending
+        .slice(0, 10)
+        .map(
+          (r) =>
+            `${r.status || ""} · tracking=${r.tracking_number || "-"} · session=${
+              r.stripe_session_id || "-"
+            }`
+        )
+        .join("\n- ")}`;
+    };
+
+    const tool_topCustomers = async () => {
+      const { data, error } = await sb
+        .from("orders")
+        .select("email,customer_name,amount_total_mxn,status")
+        .eq("organization_id", orgId)
+        .eq("status", "paid")
+        .limit(500);
+
+      if (error) return `No pude leer clientes (orders). Motivo: ${error.message}`;
+
+      const map = new Map();
+      for (const o of data || []) {
+        const email = String(o.email || "").trim().toLowerCase();
+        if (!email) continue;
+        const rec = map.get(email) || {
+          email,
+          name: String(o.customer_name || "").trim() || email,
+          orders: 0,
+          total: 0,
+        };
+        rec.orders += 1;
+        rec.total += Number(o.amount_total_mxn || 0);
+        map.set(email, rec);
+      }
+
+      const top = Array.from(map.values()).sort((a, b) => b.total - a.total).slice(0, 5);
+      if (!top.length) return "Clientes: todavía no hay ventas pagadas.";
+
+      return `Top clientes (pagado):\n- ${top
+        .map((c) => `${c.name} · ${c.orders} compras · $${c.total.toLocaleString("es-MX")} MXN`)
+        .join("\n- ")}`;
+    };
+
     const p = prompt.toLowerCase();
+    let toolContext = "";
 
-    if (p.includes("venta") || p.includes("ingreso") || p.includes("dinero") || p.includes("resumen")) {
-      const metrics = await getMetricsTool();
-      const result = await model.generateContent(
-        `El usuario preguntó: "${prompt}". Los datos reales del sistema son: ${metrics}. Responde de forma ejecutiva y con siguiente acción recomendada.`
-      );
-      finalResponse = result.response.text();
+    if (p.includes("promo") || p.includes("megáfono") || p.includes("cintillo")) {
+      if (p.includes("apaga") || p.includes("desactiva") || p.includes("quita")) {
+        toolContext = await tool_disablePromo();
+      } else {
+        const m = prompt.match(/"([^"]{3,160})"/);
+        if (m && m[1]) toolContext = await tool_setPromo(m[1]);
+        else toolContext = "El usuario quiere activar una promo.";
+      }
     }
-    else if (p.includes("promo") || p.includes("marketing") || p.includes("cintillo") || p.includes("megáfono")) {
+
+    if (!toolContext && (p.includes("pixel") || p.includes("meta pixel") || p.includes("facebook pixel"))) {
+      const m = prompt.match(/(\d{8,20})/);
+      if (m && m[1]) toolContext = await tool_setPixel(m[1]);
+      else toolContext = "El usuario pidió configurar Pixel, pero no dio el ID.";
+    }
+
+    if (!toolContext && (p.includes("venta") || p.includes("ingreso") || p.includes("resumen") || p.includes("dashboard"))) {
+      toolContext = await tool_salesSummary();
+    }
+
+    if (!toolContext && (p.includes("envío") || p.includes("envios") || p.includes("guía") || p.includes("tracking"))) {
+      toolContext = await tool_pendingShipments();
+    }
+
+    if (!toolContext && (p.includes("cliente") || p.includes("clientes") || p.includes("top clientes"))) {
+      toolContext = await tool_topCustomers();
+    }
+
+    if (toolContext === "El usuario quiere activar una promo.") {
       const copyResult = await model.generateContent(
-        `El usuario quiere una promoción: "${prompt}". Escribe SOLO UNA FRASE CORTA, persuasiva, en MAYÚSCULAS con 1-2 emojis para un cintillo de tienda online. Nada más.`
+        `Genera SOLO una frase corta (máximo 120 caracteres), persuasiva, en MAYÚSCULAS con 1-2 emojis para un cintillo de tienda. Contexto: "${prompt}"`
       );
-      const copy = copyResult.response.text().trim();
-      const status = await updatePromoTool(copy);
-      finalResponse = `Listo. ${status}`;
-    }
-    else {
-      const result = await model.generateContent(prompt);
-      finalResponse = result.response.text();
+      const copy = clamp(copyResult.response.text(), 160);
+      toolContext = await tool_setPromo(copy);
+      return json(200, { reply: `Listo.\n${toolContext}` });
     }
 
-    return NextResponse.json({ reply: finalResponse });
+    if (toolContext === "El usuario pidió configurar Pixel, pero no dio el ID.") {
+      return json(200, {
+        reply: "Pásame el número del Pixel (solo dígitos) y lo guardo. Ejemplo: 123456789012345.",
+      });
+    }
 
-  } catch (error) {
-    console.error("Error en Unico IA:", error);
-    return NextResponse.json({ error: "Error en el procesamiento neuronal." }, { status: 500 });
+    const finalPrompt = toolContext
+      ? `Usuario: "${prompt}"\n\nDatos/Acciones reales del sistema:\n${toolContext}\n\nResponde con: (1) resumen ejecutivo corto, (2) siguiente acción recomendada, (3) si aplica, un botón/acción concreta que el usuario pueda hacer en UnicOs.`
+      : prompt;
+
+    const result = await model.generateContent(finalPrompt);
+    const reply = clamp(result?.response?.text?.() || "", 2500);
+
+    return json(200, { reply: reply || "Sin respuesta." });
+  } catch (e) {
+    console.error("[Unico IA] error:", e);
+    return json(500, { error: "Error interno en Unico IA.", detail: String(e?.message || e) });
   }
 }
