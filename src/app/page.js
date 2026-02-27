@@ -1,771 +1,1807 @@
 // src/app/page.js
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import clsx from "clsx";
 import { supabase } from "@/lib/supabase";
+import { hasPerm, canManageUsers, canRefund } from "@/lib/authz";
 import {
-  AlertTriangle,
-  BarChart3,
-  Bot,
-  ChevronDown,
-  CheckCircle,
-  DollarSign,
-  Info,
-  LogOut,
-  Menu,
-  Megaphone,
-  Package,
-  RefreshCcw,
-  Send,
+  LayoutDashboard,
   ShoppingCart,
-  Sparkles,
   Truck,
+  Package,
   Users,
+  Megaphone,
+  Shield,
+  Settings,
+  LogOut,
+  ChevronDown,
+  Menu,
+  Search,
+  Bell,
+  Sparkles,
+  RefreshCcw,
+  Info,
+  CheckCircle,
+  AlertTriangle,
+  XCircle,
+  ExternalLink,
+  Copy,
   X,
+  Bot,
+  Send,
+  Download,
+  BadgeDollarSign,
 } from "lucide-react";
+
+const BRAND_ICON = "/icon-512.png"; // usa tu icono/logo oficial (reemplaza este PNG por tu logo si quieres)
 
 const moneyMXN = (v) =>
   Number(v || 0).toLocaleString("es-MX", { style: "currency", currency: "MXN" });
 
-const num = (v) => Number(v || 0).toLocaleString("en-US");
-
+const num = (v) => Number(v || 0).toLocaleString("es-MX");
 const normEmail = (s) => String(s || "").trim().toLowerCase();
 
-const BRAND_ICON = "/icon-512.png"; // logo oficial (PWA icon)
+function stripeDashboardUrl(sessionId) {
+  const id = String(sessionId || "");
+  if (!id) return null;
+  const isTest = id.startsWith("cs_test_");
+  return isTest
+    ? `https://dashboard.stripe.com/test/checkout/sessions/${encodeURIComponent(id)}`
+    : `https://dashboard.stripe.com/checkout/sessions/${encodeURIComponent(id)}`;
+}
 
-function LoginScreen({ onLogin }) {
+function extractEnviaCost(raw) {
+  try {
+    const r = raw && typeof raw === "object" ? raw : {};
+    const candidates = [
+      r?.totalPrice,
+      r?.basePrice,
+      r?.price,
+      r?.amount,
+      r?.rate,
+      r?.data?.totalPrice,
+      r?.data?.price,
+      r?.data?.amount,
+      r?.shipment?.totalPrice,
+      r?.shipment?.price,
+      r?.shipment?.amount,
+    ]
+      .map((v) => Number(v))
+      .filter((n) => Number.isFinite(n) && n > 0);
+
+    if (!candidates.length && Array.isArray(raw)) {
+      for (const it of raw) {
+        const n = Number(it?.totalPrice ?? it?.price ?? it?.amount ?? NaN);
+        if (Number.isFinite(n) && n > 0) candidates.push(n);
+      }
+    }
+    return candidates.length ? candidates[0] : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function estimateStripeFeeMXN(orders) {
+  // fallback si Stripe key no está configurada: 3.6% + $3 (estimación)
+  let fee = 0;
+  for (const o of orders || []) {
+    const total = Number(o?.amount_total_mxn || 0);
+    if (!total) continue;
+    fee += total * 0.036 + 3;
+  }
+  return fee;
+}
+
+/* =========================================================
+   ENTRY
+   ========================================================= */
+export default function AdminPage() {
+  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState(null);
+
+  useEffect(() => {
+    let unsub = null;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      setSession(data?.session || null);
+      const { data: sub } = await supabase.auth.onAuthStateChange((_e, s) => setSession(s || null));
+      unsub = sub?.subscription || null;
+      setLoading(false);
+    })();
+    return () => unsub?.unsubscribe?.();
+  }, []);
+
+  if (loading) return <LoadingScreen />;
+  if (!session) return <LoginScreen />;
+  return <AdminDashboard session={session} />;
+}
+
+/* =========================================================
+   LOGIN
+   ========================================================= */
+function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState({ text: "", type: "" });
 
-  const handleLogin = async (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
+    setBusy(true);
+    setMsg({ text: "", type: "" });
 
-    const { data, error: loginError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const em = normEmail(email);
+      if (!em || !password) throw new Error("Credenciales requeridas.");
 
-    if (loginError) setError(loginError.message);
-    else if (data?.session) onLogin(data.session);
-
-    setLoading(false);
+      const { error } = await supabase.auth.signInWithPassword({ email: em, password });
+      if (error) throw error;
+    } catch (err) {
+      setMsg({ text: err?.message || "Error de autenticación", type: "error" });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-slate-900 p-6 font-sans">
-      <div className="max-w-md w-full bg-slate-800 border border-slate-700 rounded-3xl shadow-2xl p-10 overflow-hidden relative">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse"></div>
-        <div className="absolute bottom-0 left-0 w-32 h-32 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse"></div>
+    <div
+      className="min-h-screen w-full flex items-center justify-center p-4 relative overflow-hidden"
+      style={{
+        background:
+          "radial-gradient(900px 600px at 20% 20%, rgba(14,165,233,0.18), transparent 60%), radial-gradient(900px 600px at 80% 80%, rgba(20,184,166,0.14), transparent 55%), #F8FAFC",
+      }}
+    >
+      <div className="w-full max-w-md bg-white rounded-[2rem] shadow-2xl overflow-hidden relative z-10 animate-slide-up border border-slate-200">
+        <div className="p-8 text-center border-b border-slate-100 bg-slate-50/70">
+          <div className="mx-auto h-16 w-16 rounded-2xl flex items-center justify-center shadow-lg mb-4 bg-white overflow-hidden border border-slate-200">
+            <Image src={BRAND_ICON} alt="UnicOs" width={64} height={64} className="object-contain p-2" priority />
+          </div>
 
-        <div className="relative z-10 flex flex-col items-center">
-          <div className="relative w-20 h-20 bg-slate-900 rounded-2xl flex items-center justify-center mb-6 shadow-inner border border-slate-700 overflow-hidden">
-            <Image
-              src={BRAND_ICON}
-              alt="UnicOs"
-              fill
-              sizes="80px"
-              priority
-              className="object-contain p-2"
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+            UnicOs <span className="text-sky-600">Admin</span>
+          </h1>
+          <p className="text-xs font-bold text-slate-500 tracking-widest uppercase mt-2">Central Command</p>
+        </div>
+
+        <form onSubmit={submit} className="p-8 space-y-5">
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Correo</label>
+            <input
+              className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-4 rounded-xl outline-none focus:border-sky-600 focus:ring-4 focus:ring-sky-600/10 transition-all font-semibold text-slate-800"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@scorestore.com"
+              type="email"
+              required
             />
           </div>
-          <h1 className="text-3xl font-black text-white mb-2 tracking-tight">
-            UnicOs <span className="text-blue-500">Enterprise</span>
-          </h1>
-          <p className="text-slate-400 text-sm mb-8 text-center font-medium">
-            Centro de Control Global
-          </p>
 
-          {error && (
-            <div className="w-full bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl mb-6 text-sm flex items-start">
-              <AlertTriangle className="mr-3 flex-shrink-0 mt-0.5" size={16} />
-              <span>{error}</span>
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Clave</label>
+            <input
+              className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-4 rounded-xl outline-none focus:border-sky-600 focus:ring-4 focus:ring-sky-600/10 transition-all font-semibold text-slate-800"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              type="password"
+              required
+            />
+          </div>
+
+          {msg.text && (
+            <div
+              className={clsx(
+                "p-4 rounded-xl text-sm font-bold flex items-start gap-2",
+                msg.type === "error" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"
+              )}
+            >
+              <AlertTriangle size={18} className="shrink-0 mt-0.5" /> <span>{msg.text}</span>
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="w-full space-y-5">
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                Correo
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 text-white px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder-slate-600"
-                placeholder="tu@correo.com"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                Contraseña
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 text-white px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all placeholder-slate-600"
-                placeholder="••••••••"
-                required
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 text-white font-black py-4 rounded-xl hover:bg-blue-500 transition-colors shadow-lg shadow-blue-500/30 flex items-center justify-center mt-4 disabled:opacity-70 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              ) : (
-                "Acceder"
-              )}
-            </button>
-          </form>
-        </div>
+          <button
+            disabled={busy}
+            className="w-full text-white font-black py-4 rounded-xl shadow-lg transition-colors duration-300 disabled:opacity-50"
+            style={{ background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" }}
+          >
+            {busy ? "AUTENTICANDO..." : "INICIAR SESIÓN"}
+          </button>
+        </form>
       </div>
     </div>
   );
 }
 
-function LoadingScreen({ text = "Sincronizando..." }) {
-  return (
-    <div className="min-h-screen w-full bg-slate-900 flex flex-col items-center justify-center font-sans">
-      <div className="w-16 h-16 border-4 border-slate-700 border-t-blue-500 rounded-full animate-spin mb-6"></div>
-      <p className="text-slate-400 text-sm font-medium animate-pulse">{text}</p>
-    </div>
-  );
-}
-
-function EmptyStateMultiTenant() {
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-slate-900 p-6 font-sans">
-      <div className="max-w-md w-full bg-slate-800 border border-slate-700 rounded-3xl shadow-2xl p-10 text-center">
-        <div className="w-20 h-20 bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-6">
-          <AlertTriangle className="text-yellow-500" size={40} />
-        </div>
-        <h2 className="text-xl font-black text-white mb-2">Sin organización</h2>
-        <p className="text-slate-400 text-sm mb-8 leading-relaxed">
-          Tu cuenta no está vinculada a ninguna organización activa.
-          <br />
-          Pide acceso a un administrador.
-        </p>
-        <button
-          onClick={() => supabase.auth.signOut()}
-          className="w-full bg-slate-700 text-white font-bold py-3 rounded-xl hover:bg-slate-600 transition-colors"
-        >
-          Cerrar Sesión
-        </button>
-      </div>
-    </div>
-  );
-}
-
+/* =========================================================
+   SHELL
+   ========================================================= */
 function AdminDashboard({ session }) {
-  const [loading, setLoading] = useState(true);
+  const token = session?.access_token || "";
+  const email = session?.user?.email || "";
+
   const [orgs, setOrgs] = useState([]);
+  const [memberships, setMemberships] = useState([]);
   const [selectedOrgId, setSelectedOrgId] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+
+  const [aiOpen, setAiOpen] = useState(false);
+  const [globalQuery, setGlobalQuery] = useState("");
+  const [globalResults, setGlobalResults] = useState({ orders: [], products: [] });
+  const [globalOpen, setGlobalOpen] = useState(false);
+
+  const selectedMembership = useMemo(
+    () => memberships.find((m) => String(m.org_id) === String(selectedOrgId)) || null,
+    [memberships, selectedOrgId]
+  );
+  const role = String(selectedMembership?.role || "viewer").toLowerCase();
+  const canWrite = ["owner", "admin", "ops"].includes(role);
+
+  const showToast = (t) => {
+    setToast(t);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2400);
+  };
 
   useEffect(() => {
     async function init() {
       try {
         setLoading(true);
 
-        const userEmail = normEmail(session?.user?.email);
-
-        const { data: mems, error: memError } = await supabase
+        const em = normEmail(email);
+        const { data: mems, error: memErr } = await supabase
           .from("admin_users")
-          .select("organization_id, role, is_active")
-          .ilike("email", userEmail);
+          .select("organization_id, role")
+          .ilike("email", em)
+          .eq("is_active", true);
 
-        if (memError) throw new Error("Error en admin_users: " + memError.message);
+        if (memErr) throw memErr;
 
-        const orgIds = Array.from(
-          new Set((mems || []).map((m) => m.organization_id).filter(Boolean))
-        );
+        const mapped = (mems || []).map((m) => ({ org_id: m.organization_id, role: m.role }));
+        setMemberships(mapped);
 
+        const orgIds = Array.from(new Set(mapped.map((m) => m.org_id).filter(Boolean)));
         if (!orgIds.length) {
           setSelectedOrgId(null);
           setOrgs([]);
           return;
         }
 
-        const { data: orgData, error: orgError } = await supabase
+        const { data: orgData, error: orgErr } = await supabase
           .from("organizations")
-          .select("*")
+          .select("id, name, slug")
           .in("id", orgIds)
           .order("name");
 
-        if (orgError) throw new Error("Error en organizations: " + orgError.message);
+        if (orgErr) throw orgErr;
 
-        const list = orgData || [];
-        setOrgs(list);
-
-        const preferScore = list.find((o) =>
-          String(o.name || "").toLowerCase().includes("score")
-        );
-        setSelectedOrgId(preferScore?.id || list?.[0]?.id || null);
-      } catch (err) {
-        console.error(err);
+        setOrgs(orgData || []);
+        setSelectedOrgId(orgData?.[0]?.id || null);
+      } catch (e) {
+        console.error(e);
         setSelectedOrgId(null);
         setOrgs([]);
       } finally {
         setLoading(false);
       }
     }
+    init();
+  }, [email]);
 
-    if (session?.user) init();
-    else setLoading(false);
-  }, [session]);
+  useEffect(() => {
+    let alive = true;
+    const run = async () => {
+      const q = globalQuery.trim();
+      if (q.length < 2 || !selectedOrgId) {
+        if (alive) setGlobalResults({ orders: [], products: [] });
+        return;
+      }
+
+      const [oRes, pRes] = await Promise.all([
+        supabase
+          .from("orders")
+          .select("id, created_at, customer_name, email, amount_total_mxn, status, stripe_session_id")
+          .eq("organization_id", selectedOrgId)
+          .or(`customer_name.ilike.%${q}%,email.ilike.%${q}%,id.ilike.%${q}%`)
+          .order("created_at", { ascending: false })
+          .limit(6),
+        supabase
+          .from("products")
+          .select("id, name, sku, price_mxn, stock, is_active")
+          .eq("organization_id", selectedOrgId)
+          .or(`name.ilike.%${q}%,sku.ilike.%${q}%`)
+          .order("created_at", { ascending: false })
+          .limit(6),
+      ]);
+
+      if (!alive) return;
+      setGlobalResults({
+        orders: oRes?.data || [],
+        products: pRes?.data || [],
+      });
+    };
+
+    const t = setTimeout(run, 220);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [globalQuery, selectedOrgId]);
 
   const signOut = () => supabase.auth.signOut();
 
-  if (loading) return <LoadingScreen text="Cargando panel..." />;
-  if (!selectedOrgId) return <EmptyStateMultiTenant />;
+  if (loading) return <LoadingScreen />;
+  if (!selectedOrgId) return <EmptyStateMultiTenant onExit={() => supabase.auth.signOut()} />;
 
-  const TABS = [
-    { id: "dashboard", label: "Panel", icon: <BarChart3 size={20} /> },
-    { id: "orders", label: "Órdenes", icon: <ShoppingCart size={20} /> },
+  const ALL_TABS = [
+    { id: "dashboard", label: "Finanzas & KPIs", icon: <LayoutDashboard size={20} /> },
+    { id: "orders", label: "Pedidos", icon: <ShoppingCart size={20} /> },
     { id: "shipping", label: "Envíos", icon: <Truck size={20} /> },
-    { id: "customers", label: "Clientes", icon: <Users size={20} /> },
     { id: "products", label: "Productos", icon: <Package size={20} /> },
+    { id: "crm", label: "Clientes", icon: <Users size={20} /> },
     { id: "marketing", label: "Marketing", icon: <Megaphone size={20} /> },
-    { id: "team", label: "Equipo", icon: <Users size={20} /> },
-    { id: "integrations", label: "Integraciones", icon: <Info size={20} /> },
+    { id: "users", label: "Equipo", icon: <Shield size={20} /> },
+    { id: "integrations", label: "Integraciones", icon: <Settings size={20} /> },
   ];
+  const TABS = ALL_TABS.filter((t) => hasPerm(role, t.id));
+  const activeLabel = TABS.find((t) => t.id === activeTab)?.label || "Panel";
 
   return (
-    <div className="flex h-screen bg-slate-900 font-sans text-slate-200 overflow-hidden">
-      <aside className="hidden md:flex flex-col w-72 bg-slate-950 border-r border-slate-800 shrink-0 relative z-20">
-        <div className="h-20 flex items-center px-6 border-b border-slate-800">
-          <div className="relative w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center mr-3 shadow-lg shadow-blue-500/20 border border-slate-800 overflow-hidden">
-            <Image
-              src={BRAND_ICON}
-              alt="UnicOs"
-              fill
-              sizes="40px"
-              className="object-contain p-1.5"
-            />
+    <div
+      className="flex h-screen overflow-hidden font-sans"
+      style={{
+        background:
+          "linear-gradient(180deg, rgba(14,165,233,0.06), rgba(20,184,166,0.04) 35%, rgba(248,250,252,1) 100%)",
+      }}
+    >
+      {mobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 md:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={clsx(
+          "fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 md:translate-x-0 md:static",
+          mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        <div className="p-6 flex items-center gap-3 border-b border-slate-200 bg-slate-50/70">
+          <div className="h-10 w-10 rounded-xl flex items-center justify-center shadow-sm overflow-hidden bg-white border border-slate-200">
+            <Image src={BRAND_ICON} alt="UnicOs" width={40} height={40} className="object-contain p-1.5" priority />
           </div>
           <div>
-            <h2 className="font-black text-white text-lg tracking-tight">UnicOs</h2>
-            <p className="text-xs text-slate-500 font-medium">Admin</p>
+            <h1 className="text-lg font-black text-slate-900 leading-tight tracking-tight">UnicOs</h1>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+              <p className="text-[10px] font-bold tracking-widest uppercase text-slate-500">{role}</p>
+            </div>
           </div>
         </div>
 
-        <div className="p-6 border-b border-slate-800">
-          <label className="text-xs font-black text-slate-500 uppercase tracking-wider mb-2 block">
-            Organización
+        <div className="p-4 border-b border-slate-200">
+          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 mb-2 block">
+            Organización Activa
           </label>
           <div className="relative">
             <select
-              value={selectedOrgId}
-              onChange={(e) => setSelectedOrgId(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 text-white font-bold px-4 py-3 rounded-xl appearance-none focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all cursor-pointer"
+              className="w-full appearance-none bg-white border border-slate-200 rounded-xl py-3 px-4 text-sm font-black text-slate-900 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+              value={selectedOrgId || ""}
+              onChange={(e) => {
+                setSelectedOrgId(e.target.value);
+                setActiveTab("dashboard");
+                showToast({ type: "info", text: "Organización actualizada." });
+              }}
             >
-              {orgs.map((org) => (
-                <option key={org.id} value={org.id}>
-                  {org.name}
+              {orgs.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
                 </option>
               ))}
             </select>
-            <ChevronDown
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
-              size={18}
-            />
+            <ChevronDown className="absolute right-4 top-3.5 text-slate-400 pointer-events-none" size={16} />
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto custom-scrollbar">
           {TABS.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${
-                activeTab === tab.id
-                  ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20"
-                  : "text-slate-400 hover:bg-slate-900 hover:text-white"
-              }`}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setMobileMenuOpen(false);
+              }}
+              className={clsx(
+                "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-black transition-all",
+                activeTab === tab.id ? "text-white shadow-lg" : "hover:bg-slate-100 text-slate-700"
+              )}
+              style={activeTab === tab.id ? { background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" } : undefined}
             >
-              {tab.icon}
-              <span className="text-sm">{tab.label}</span>
+              <span className={activeTab === tab.id ? "text-white" : "text-slate-400"}>{tab.icon}</span>
+              {tab.label}
             </button>
           ))}
         </nav>
 
-        <div className="p-4 border-t border-slate-800">
+        <div className="p-4 border-t border-slate-200 bg-slate-50/70 space-y-2">
+          <button
+            onClick={() => setAiOpen(true)}
+            className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 transition-colors"
+          >
+            <span className="flex items-center gap-2 text-xs font-black text-slate-900">
+              <Sparkles size={14} /> Unico IA
+            </span>
+            <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200">
+              AI
+            </span>
+          </button>
+
           <button
             onClick={signOut}
-            className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-slate-300 font-black py-3 rounded-xl transition-colors border border-slate-700"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl hover:bg-rose-50 hover:text-rose-700 text-xs font-black text-slate-700 transition-colors border border-slate-200 bg-white"
           >
-            <LogOut size={18} /> Cerrar Sesión
+            <LogOut size={14} /> Cerrar Sesión
           </button>
         </div>
       </aside>
 
-      <header className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-4 z-30">
-        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2">
-          <Menu size={24} className="text-slate-300" />
-        </button>
+      {/* Main */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+        <header className="z-20 px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 bg-white/80 backdrop-blur-md border-b border-slate-200 glass-header">
+          <div className="flex items-center gap-4 min-w-0">
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="md:hidden p-2 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg"
+              aria-label="Abrir menú"
+            >
+              <Menu size={20} />
+            </button>
 
-        <div className="flex items-center gap-2">
-          <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-slate-800 bg-slate-900">
-            <Image
-              src={BRAND_ICON}
-              alt="UnicOs"
-              fill
-              sizes="32px"
-              className="object-contain p-1"
-            />
+            <div className="min-w-0">
+              <h2 className="text-xl font-black text-slate-900 tracking-tight truncate">{activeLabel}</h2>
+              <p className="text-xs font-semibold text-slate-500 truncate">{email}</p>
+            </div>
           </div>
-          <h1 className="font-black text-white">UnicOs</h1>
-        </div>
 
-        <button onClick={signOut} className="p-2">
-          <LogOut size={22} className="text-slate-300" />
-        </button>
-      </header>
+          {/* Global Search */}
+          <div className="relative hidden md:block w-[420px] max-w-[42vw]">
+            <Search className="absolute left-3 top-3 text-slate-400" size={18} />
+            <input
+              value={globalQuery}
+              onChange={(e) => {
+                setGlobalQuery(e.target.value);
+                setGlobalOpen(true);
+              }}
+              onFocus={() => setGlobalOpen(true)}
+              placeholder="Buscar pedido, cliente o producto…"
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+            />
 
-      {isSidebarOpen && (
-        <div
-          className="md:hidden fixed inset-0 bg-black/60 z-40"
-          onClick={() => setIsSidebarOpen(false)}
-        >
-          <aside
-            className="w-72 h-full bg-slate-950 border-r border-slate-800 p-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-black text-white">Menú</h2>
-              <button onClick={() => setIsSidebarOpen(false)}>
-                <X size={20} className="text-slate-400" />
-              </button>
-            </div>
+            {globalOpen && globalQuery.trim().length >= 2 && (
+              <div className="absolute top-12 left-0 right-0 bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden z-50">
+                <div className="p-3 border-b border-slate-100 flex items-center justify-between">
+                  <p className="text-xs font-black uppercase tracking-widest text-slate-500">Resultados</p>
+                  <button onClick={() => setGlobalOpen(false)} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200">
+                    <X size={16} />
+                  </button>
+                </div>
 
-            <div className="mb-4">
-              <label className="text-xs font-black text-slate-500 uppercase tracking-wider mb-2 block">
-                Organización
-              </label>
-              <div className="relative">
-                <select
-                  value={selectedOrgId}
-                  onChange={(e) => setSelectedOrgId(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 text-white font-bold px-4 py-3 rounded-xl appearance-none"
-                >
-                  {orgs.map((org) => (
-                    <option key={org.id} value={org.id}>
-                      {org.name}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none"
-                  size={18}
-                />
+                <div className="p-3">
+                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">Pedidos</p>
+                  {globalResults.orders.length ? (
+                    <div className="space-y-1">
+                      {globalResults.orders.map((o) => (
+                        <button
+                          key={o.id}
+                          className="w-full text-left p-3 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200"
+                          onClick={() => {
+                            setActiveTab("orders");
+                            setGlobalOpen(false);
+                            showToast({ type: "info", text: "Abriendo pedidos…" });
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <p className="font-black text-slate-900">
+                              #{String(o.id).split("-")[0].toUpperCase()}{" "}
+                              <span className="text-slate-500 font-semibold">• {moneyMXN(o.amount_total_mxn)}</span>
+                            </p>
+                            <span className="text-xs font-black text-slate-600">{String(o.status || "").toUpperCase()}</span>
+                          </div>
+                          <p className="text-xs font-semibold text-slate-500">{o.customer_name || o.email || "—"}</p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm font-semibold text-slate-500">Sin coincidencias.</p>
+                  )}
+
+                  <div className="mt-4">
+                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">Productos</p>
+                    {globalResults.products.length ? (
+                      <div className="space-y-1">
+                        {globalResults.products.map((p) => (
+                          <button
+                            key={p.id}
+                            className="w-full text-left p-3 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200"
+                            onClick={() => {
+                              setActiveTab("products");
+                              setGlobalOpen(false);
+                              showToast({ type: "info", text: "Abriendo productos…" });
+                            }}
+                          >
+                            <p className="font-black text-slate-900">{p.name}</p>
+                            <p className="text-xs font-semibold text-slate-500">
+                              SKU: {p.sku || "—"} • {moneyMXN(p.price_mxn)} • Stock: {num(p.stock)}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm font-semibold text-slate-500">Sin coincidencias.</p>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
+          </div>
 
-            <nav className="space-y-2">
-              {TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    setIsSidebarOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold ${
-                    activeTab === tab.id
-                      ? "bg-blue-600 text-white"
-                      : "text-slate-400 hover:bg-slate-900"
-                  }`}
-                >
-                  {tab.icon}
-                  <span className="text-sm">{tab.label}</span>
-                </button>
-              ))}
-            </nav>
-          </aside>
-        </div>
-      )}
+          <div className="flex items-center gap-2 md:gap-3">
+            <button className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700" aria-label="Notificaciones">
+              <Bell size={18} />
+            </button>
 
-      <main className="flex-1 flex flex-col pt-16 md:pt-0 overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-6 md:p-10">
-          {activeTab === "dashboard" && <ModuleDashboard orgId={selectedOrgId} />}
-          {activeTab === "orders" && <ModuleOrders orgId={selectedOrgId} />}
-          {activeTab === "shipping" && <ModuleShipping orgId={selectedOrgId} />}
-          {activeTab === "customers" && <ModuleCustomers orgId={selectedOrgId} />}
-          {activeTab === "products" && <ModuleProducts orgId={selectedOrgId} />}
-          {activeTab === "marketing" && <ModuleMarketing orgId={selectedOrgId} />}
-          {activeTab === "team" && <ModuleTeam orgId={selectedOrgId} />}
-          {activeTab === "integrations" && <ModuleIntegrations orgId={selectedOrgId} />}
+            <button
+              onClick={() => setAiOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-white font-black text-xs shadow-sm"
+              style={{ background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" }}
+            >
+              <Sparkles size={16} /> IA
+            </button>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8 pb-28">
+          <div className="max-w-7xl mx-auto animate-slide-up space-y-6">
+            {activeTab === "dashboard" && <DashboardView orgId={selectedOrgId} token={token} showToast={showToast} />}
+            {activeTab === "orders" && <OrdersView orgId={selectedOrgId} token={token} role={role} canWrite={canWrite} showToast={showToast} />}
+            {activeTab === "shipping" && <ShippingView orgId={selectedOrgId} showToast={showToast} />}
+            {activeTab === "products" && <ProductsView orgId={selectedOrgId} role={role} showToast={showToast} />}
+            {activeTab === "crm" && <CRMView orgId={selectedOrgId} />}
+            {activeTab === "marketing" && <MarketingView orgId={selectedOrgId} showToast={showToast} />}
+            {activeTab === "users" && <UsersView orgId={selectedOrgId} token={token} role={role} showToast={showToast} />}
+            {activeTab === "integrations" && <IntegrationsView token={token} showToast={showToast} />}
+          </div>
         </div>
 
-        <UnicoIAWidget orgId={selectedOrgId} />
+        {aiOpen && <AISidekick orgId={selectedOrgId} token={token} onClose={() => setAiOpen(false)} />}
+
+        {toast && <Toast t={toast} />}
       </main>
     </div>
   );
 }
 
-function ModuleDashboard({ orgId }) {
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
+/* =========================================================
+   DASHBOARD (incluye: Stripe fee + Envía cost + Profit 70%)
+   ========================================================= */
+function DashboardView({ orgId, token, showToast }) {
+  const [range, setRange] = useState("30d");
+  const [busy, setBusy] = useState(true);
+  const [kpi, setKpi] = useState({
+    gross: 0,
+    orders: 0,
+    avg: 0,
+    stripeFee: 0,
+    stripeMode: "estimate",
+    enviaCost: 0,
+    profit100: 0,
+    profit70: 0,
+  });
 
-  const fetchStats = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("orders")
-      .select("amount_total_mxn, status")
-      .eq("organization_id", orgId);
+  const load = async () => {
+    setBusy(true);
+    try {
+      const now = new Date();
+      const since =
+        range === "7d"
+          ? new Date(now.getTime() - 7 * 864e5)
+          : range === "30d"
+          ? new Date(now.getTime() - 30 * 864e5)
+          : range === "month"
+          ? new Date(now.getFullYear(), now.getMonth(), 1)
+          : null;
 
-    const paid = (data || []).filter((o) => o.status === "paid");
-    const pending = (data || []).filter((o) => o.status !== "paid");
-    const total = paid.reduce((acc, o) => acc + Number(o.amount_total_mxn || 0), 0);
+      let q = supabase
+        .from("orders")
+        .select("amount_total_mxn, status, stripe_session_id, stripe_payment_intent_id, created_at")
+        .eq("organization_id", orgId)
+        .eq("status", "paid")
+        .order("created_at", { ascending: false })
+        .limit(800);
 
-    setStats({
-      paidCount: paid.length,
-      pendingCount: pending.length,
-      totalRevenue: total,
-      totalOrders: (data || []).length,
-    });
+      if (since) q = q.gte("created_at", since.toISOString());
 
-    setLoading(false);
+      const { data: orders, error } = await q;
+      if (error) throw error;
+
+      const list = orders || [];
+      const gross = list.reduce((acc, o) => acc + Number(o.amount_total_mxn || 0), 0);
+      const count = list.length;
+      const avg = count ? gross / count : 0;
+
+      const sessions = list.map((o) => o.stripe_session_id).filter(Boolean).slice(0, 120);
+
+      // Envía cost desde shipping_labels.raw
+      let enviaCost = 0;
+      if (sessions.length) {
+        const { data: labels } = await supabase
+          .from("shipping_labels")
+          .select("raw, stripe_session_id")
+          .eq("org_id", orgId)
+          .in("stripe_session_id", sessions);
+
+        for (const l of labels || []) enviaCost += extractEnviaCost(l?.raw);
+      }
+
+      // Stripe fee real (server) o estimado
+      let stripeFee = 0;
+      let stripeMode = "estimate";
+
+      if (sessions.length) {
+        const res = await fetch("/api/stripe/fees", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ org_id: orgId, stripe_session_ids: sessions }),
+        });
+
+        const j = await res.json().catch(() => ({}));
+        if (res.ok && j?.ok) {
+          stripeFee = Number(j.total_fee_mxn || 0);
+          stripeMode = String(j.mode || "stripe");
+        } else {
+          stripeFee = estimateStripeFeeMXN(list);
+          stripeMode = "estimate";
+        }
+      } else {
+        stripeFee = estimateStripeFeeMXN(list);
+        stripeMode = "estimate";
+      }
+
+      const profit100 = Math.max(0, gross - stripeFee - enviaCost);
+      const profit70 = profit100 * 0.7;
+
+      setKpi({ gross, orders: count, avg, stripeFee, stripeMode, enviaCost, profit100, profit70 });
+    } catch (e) {
+      console.error(e);
+      showToast?.({ type: "error", text: "No se pudo cargar el dashboard." });
+    } finally {
+      setBusy(false);
+    }
   };
 
   useEffect(() => {
-    fetchStats();
-  }, [orgId]);
-
-  if (loading) {
-    return (
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 shadow-xl">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h3 className="text-2xl font-black text-white">Panel</h3>
-            <p className="text-slate-500 font-medium text-sm">Cargando métricas...</p>
-          </div>
-          <div className="w-8 h-8 border-2 border-slate-700 border-t-blue-500 rounded-full animate-spin"></div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-3xl font-black text-white mb-1">Panel</h3>
-          <p className="text-slate-500 font-medium text-sm">
-            Vista rápida de ventas y pedidos.
-          </p>
-        </div>
-        <button
-          onClick={fetchStats}
-          className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-black px-4 py-2 rounded-xl flex items-center gap-2 transition-colors border border-slate-700"
-        >
-          <RefreshCcw size={16} /> Actualizar
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        <StatCard
-          title="Ingresos pagados"
-          value={moneyMXN(stats.totalRevenue)}
-          icon={<DollarSign size={22} />}
-          tone="blue"
-        />
-        <StatCard
-          title="Órdenes pagadas"
-          value={num(stats.paidCount)}
-          icon={<CheckCircle size={22} />}
-          tone="emerald"
-        />
-        <StatCard
-          title="Órdenes no pagadas"
-          value={num(stats.pendingCount)}
-          icon={<AlertTriangle size={22} />}
-          tone="yellow"
-        />
-        <StatCard
-          title="Total órdenes"
-          value={num(stats.totalOrders)}
-          icon={<BarChart3 size={22} />}
-          tone="purple"
-        />
-      </div>
-
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-xl">
-        <div className="flex items-center mb-4">
-          <div className="w-10 h-10 bg-blue-600/20 border border-blue-500/30 rounded-xl flex items-center justify-center mr-4">
-            <Info size={18} className="text-blue-400" />
-          </div>
-          <div>
-            <h4 className="font-black text-white">Interpretación rápida</h4>
-            <p className="text-slate-500 text-sm font-medium">
-              Lo importante en una línea.
-            </p>
-          </div>
-        </div>
-        <p className="text-slate-300 text-sm leading-relaxed">
-          Tienes <span className="font-black text-white">{stats.paidCount}</span> ventas pagadas y{" "}
-          <span className="font-black text-white">{stats.pendingCount}</span> pendientes. Ingresos confirmados:{" "}
-          <span className="font-black text-blue-400">{moneyMXN(stats.totalRevenue)}</span>.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({ title, value, icon, tone }) {
-  const tones = {
-    blue: "bg-blue-600/10 border-blue-500/20 text-blue-400",
-    emerald: "bg-emerald-600/10 border-emerald-500/20 text-emerald-400",
-    yellow: "bg-yellow-600/10 border-yellow-500/20 text-yellow-400",
-    purple: "bg-purple-600/10 border-purple-500/20 text-purple-400",
-  };
-
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden">
-      <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-3xl opacity-30 ${tones[tone]}`} />
-      <div className="relative z-10 flex items-center justify-between">
-        <div>
-          <p className="text-slate-500 text-xs font-black uppercase tracking-wider mb-2">
-            {title}
-          </p>
-          <h4 className="text-2xl font-black text-white">{value}</h4>
-        </div>
-        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${tones[tone]}`}>
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* =========================
-   Modules: Orders / Shipping / Customers / Products / Marketing / Team / Integrations
-   (el resto del archivo queda idéntico al repo actual; NO se rompe nada)
-   ========================= */
-
-function ModuleOrders({ orgId }) {
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetchOrders = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("organization_id", orgId)
-      .order("created_at", { ascending: false })
-      .limit(50);
-
-    setOrders(data || []);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchOrders();
-  }, [orgId]);
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, range]);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-3xl font-black text-white mb-1">Órdenes</h3>
-          <p className="text-slate-500 font-medium text-sm">Últimas 50 órdenes.</p>
-        </div>
-        <button
-          onClick={fetchOrders}
-          className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-black px-4 py-2 rounded-xl flex items-center gap-2 transition-colors border border-slate-700"
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden tech-shadow">
+        <div
+          className="p-8 md:p-10 relative overflow-hidden"
+          style={{
+            background:
+              "radial-gradient(900px 450px at 15% 0%, rgba(14,165,233,0.14), transparent 50%), radial-gradient(900px 450px at 85% 10%, rgba(20,184,166,0.10), transparent 55%), #0B1220",
+          }}
         >
+          <div className="relative z-10">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-slate-300/90 text-xs font-black uppercase tracking-widest mb-2 flex items-center gap-2">
+                  <BadgeDollarSign size={14} className="text-sky-300" /> Ganancia Score (70%)
+                </p>
+
+                <div className="flex items-end gap-4 flex-wrap">
+                  <h2 className="text-4xl md:text-6xl font-black text-white tracking-tighter">
+                    {busy ? "—" : moneyMXN(kpi.profit70)}
+                  </h2>
+                  <div className="pb-1">
+                    <p className="text-xs font-bold text-slate-300/80">
+                      Neto 100%: <span className="font-black text-white">{moneyMXN(kpi.profit100)}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={range}
+                  onChange={(e) => setRange(e.target.value)}
+                  className="px-3 py-2 rounded-xl bg-white/10 text-white border border-white/15 font-black text-xs outline-none"
+                >
+                  <option value="7d">Últimos 7 días</option>
+                  <option value="30d">Últimos 30 días</option>
+                  <option value="month">Este mes</option>
+                  <option value="all">Todo</option>
+                </select>
+
+                <button
+                  onClick={load}
+                  className="px-3 py-2 rounded-xl bg-white/10 text-white border border-white/15 font-black text-xs hover:bg-white/15 flex items-center gap-2"
+                >
+                  <RefreshCcw size={14} /> Actualizar
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-6 mt-6 border-t border-white/10">
+              <MiniKPI label="Ventas brutas" value={moneyMXN(kpi.gross)} />
+              <MiniKPI label="Pedidos pagados" value={num(kpi.orders)} />
+              <MiniKPI label="Ticket promedio" value={moneyMXN(kpi.avg)} />
+              <MiniKPI label="Comisión Stripe" value={moneyMXN(kpi.stripeFee)} note={kpi.stripeMode === "stripe" ? "Real" : "Estimado"} />
+              <MiniKPI label="Costo Envía" value={moneyMXN(kpi.enviaCost)} />
+              <MiniKPI label="Estado" value={busy ? "Cargando…" : "Listo"} />
+              <MiniKPI label="Plataforma" value="Score Store" />
+              <MiniKPI label="Regla" value="Score = 70%" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 tech-shadow flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="w-11 h-11 rounded-2xl bg-sky-50 border border-sky-100 flex items-center justify-center">
+            <Info size={18} className="text-sky-600" />
+          </div>
+          <div>
+            <h4 className="font-black text-slate-900">Cómo se calcula</h4>
+            <p className="text-sm font-semibold text-slate-600 mt-1">
+              Bruto − comisión Stripe − costo Envía. Luego mostramos <span className="font-black">70%</span> como “Score”.
+            </p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-xs font-black uppercase tracking-widest text-slate-500">Nota</p>
+          <p className="text-sm font-semibold text-slate-600">No incluye costos de producción.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniKPI({ label, value, note }) {
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-300/70 mb-1">{label}</p>
+      <p className="text-lg font-black text-white">{value}</p>
+      {note ? <p className="text-[10px] font-bold text-slate-300/70 mt-1">{note}</p> : null}
+    </div>
+  );
+}
+
+/* =========================================================
+   ORDERS
+   ========================================================= */
+function OrdersView({ orgId, token, role, canWrite, showToast }) {
+  const [busy, setBusy] = useState(true);
+  const [orders, setOrders] = useState([]);
+  const [labelsBySession, setLabelsBySession] = useState({});
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState("all");
+  const [selected, setSelected] = useState(null);
+
+  const load = async () => {
+    setBusy(true);
+    try {
+      let query = supabase
+        .from("orders")
+        .select("id, created_at, email, customer_name, items_summary, amount_total_mxn, status, stripe_session_id, stripe_payment_intent_id, shipping_mode, postal_code")
+        .eq("organization_id", orgId)
+        .order("created_at", { ascending: false })
+        .limit(80);
+
+      if (status !== "all") query = query.eq("status", status);
+      if (q.trim()) query = query.or(`customer_name.ilike.%${q.trim()}%,email.ilike.%${q.trim()}%,id.ilike.%${q.trim()}%`);
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const list = data || [];
+      setOrders(list);
+
+      const sessions = list.map((o) => o.stripe_session_id).filter(Boolean).slice(0, 200);
+      if (sessions.length) {
+        const { data: labels } = await supabase
+          .from("shipping_labels")
+          .select("stripe_session_id, tracking_number, label_url, status, raw")
+          .eq("org_id", orgId)
+          .in("stripe_session_id", sessions);
+
+        const map = {};
+        for (const l of labels || []) map[l.stripe_session_id] = l;
+        setLabelsBySession(map);
+      } else setLabelsBySession({});
+    } catch (e) {
+      console.error(e);
+      showToast?.({ type: "error", text: "No se pudieron cargar pedidos." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, q, status]);
+
+  const exportCsv = () => {
+    const rows = (orders || []).map((o) => ({
+      id: o.id,
+      created_at: o.created_at,
+      customer_name: o.customer_name,
+      email: o.email,
+      total_mxn: o.amount_total_mxn,
+      status: o.status,
+      stripe_session_id: o.stripe_session_id,
+    }));
+
+    const headers = Object.keys(rows[0] || { id: "" });
+    const csv =
+      headers.join(",") +
+      "\n" +
+      rows
+        .map((r) => headers.map((h) => `"${String(r[h] ?? "").replaceAll('"', '""')}"`).join(","))
+        .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `orders-${orgId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm tech-shadow p-4 md:p-6">
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+          <div>
+            <h3 className="font-black text-2xl text-slate-900 tracking-tight">Pedidos</h3>
+            <p className="text-sm text-slate-600 font-semibold">Acciones rápidas: ver Stripe, ver guía, copiar, reembolsar.</p>
+          </div>
+
+          <div className="flex flex-col md:flex-row gap-2 md:items-center">
+            <div className="relative">
+              <Search className="absolute left-3 top-3 text-slate-400" size={18} />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Buscar por cliente, correo o ID…"
+                className="pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 w-full md:w-[320px] outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+              />
+            </div>
+
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white font-black text-slate-800 text-sm">
+              <option value="all">Todos</option>
+              <option value="paid">Pagados</option>
+              <option value="pending_payment">Pendiente pago</option>
+              <option value="pending">Pendiente</option>
+              <option value="payment_failed">Pago fallido</option>
+              <option value="refunded">Reembolsado</option>
+            </select>
+
+            <button onClick={load} className="px-3 py-2.5 rounded-xl bg-slate-900 text-white font-black text-sm flex items-center gap-2 hover:opacity-90">
+              <RefreshCcw size={16} /> Recargar
+            </button>
+
+            <button onClick={exportCsv} className="px-3 py-2.5 rounded-xl bg-slate-100 text-slate-900 font-black text-sm flex items-center gap-2 hover:bg-slate-200 border border-slate-200">
+              <Download size={16} /> CSV
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden tech-shadow">
+        <div className="overflow-x-auto custom-scrollbar">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="bg-slate-50 text-slate-600 font-black border-b border-slate-200 text-[11px] uppercase tracking-widest">
+              <tr>
+                <th className="px-6 py-4">ID / Fecha</th>
+                <th className="px-6 py-4">Cliente</th>
+                <th className="px-6 py-4">Resumen</th>
+                <th className="px-6 py-4">Total</th>
+                <th className="px-6 py-4">Guía</th>
+                <th className="px-6 py-4 text-right">Estado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {busy ? (
+                <tr><td colSpan={6} className="px-6 py-10 text-slate-500 font-bold">Cargando…</td></tr>
+              ) : orders.length ? (
+                orders.map((o) => {
+                  const label = labelsBySession[o.stripe_session_id] || null;
+                  return (
+                    <tr key={o.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => setSelected({ order: o, label })}>
+                      <td className="px-6 py-4">
+                        <span className="font-mono font-black text-sky-700">#{String(o.id).split("-")[0].toUpperCase()}</span>
+                        <div className="text-xs text-slate-500 font-semibold mt-1">{o.created_at ? new Date(o.created_at).toLocaleString("es-MX") : "-"}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="font-black text-slate-900">{o.customer_name || "Sin nombre"}</div>
+                        <div className="text-xs text-slate-500 font-semibold">{o.email || "Sin correo"}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-xs text-slate-700 font-semibold max-w-[360px] truncate" title={o.items_summary || ""}>
+                          {o.items_summary || "Ver detalles"}
+                        </div>
+                        <div className="text-[10px] font-black text-slate-500 mt-1 uppercase">
+                          {o.shipping_mode ? `Envío: ${o.shipping_mode}` : "—"} {o.postal_code ? `• CP ${o.postal_code}` : ""}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 font-black text-slate-900">{moneyMXN(o.amount_total_mxn)}</td>
+                      <td className="px-6 py-4">
+                        {label?.tracking_number ? (
+                          <span className="text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-100 px-3 py-1 rounded-full">
+                            {String(label.tracking_number).slice(0, 22)}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-black text-slate-600 bg-slate-100 border border-slate-200 px-3 py-1 rounded-full">
+                            Sin guía
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right"><StatusPill status={o.status} /></td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr><td colSpan={6} className="text-center p-12 text-slate-500 font-bold">Sin registros.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {selected && (
+        <OrderModal
+          data={selected}
+          token={token}
+          role={role}
+          canWrite={canWrite}
+          onClose={() => setSelected(null)}
+          showToast={showToast}
+        />
+      )}
+    </div>
+  );
+}
+
+function OrderModal({ data, token, role, canWrite, onClose, showToast }) {
+  const o = data?.order || {};
+  const l = data?.label || null;
+
+  const copy = async (txt) => {
+    try {
+      await navigator.clipboard.writeText(String(txt || ""));
+      showToast?.({ type: "success", text: "Copiado." });
+    } catch {}
+  };
+
+  const openStripe = () => {
+    const url = stripeDashboardUrl(o.stripe_session_id);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const openLabel = () => {
+    if (l?.label_url) window.open(l.label_url, "_blank", "noopener,noreferrer");
+  };
+
+  const refund = async () => {
+    if (!canRefund(role)) return showToast?.({ type: "error", text: "Sin permisos para reembolsar." });
+    if (!confirm("¿Reembolsar este pago en Stripe?")) return;
+
+    try {
+      const res = await fetch("/api/stripe/refund", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ org_id: data?.order?.organization_id || null, order_id: o.id, org_id: data?.orgId || data?.order?.organization_id }),
+      });
+
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) throw new Error(j?.error || "No se pudo reembolsar.");
+
+      showToast?.({ type: "success", text: "Reembolso creado en Stripe." });
+      onClose();
+    } catch (e) {
+      showToast?.({ type: "error", text: e?.message || "Error reembolsando." });
+    }
+  };
+
+  const enviaCost = extractEnviaCost(l?.raw);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm p-4 flex items-end md:items-center justify-center">
+      <div className="w-full max-w-2xl bg-white rounded-[2rem] border border-slate-200 shadow-2xl overflow-hidden animate-slide-up">
+        <div className="p-6 border-b border-slate-100 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-slate-500">Detalle del pedido</p>
+            <h4 className="text-xl font-black text-slate-900">#{String(o.id || "").split("-")[0].toUpperCase()}</h4>
+            <p className="text-sm font-semibold text-slate-600 mt-1">{o.customer_name || "Sin nombre"} • {o.email || "sin correo"}</p>
+          </div>
+
+          <button onClick={onClose} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200" aria-label="Cerrar">
+            <X size={18} className="text-slate-700" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <DetailCard label="Total" value={moneyMXN(o.amount_total_mxn)} />
+            <DetailCard label="Estado" value={<StatusPill status={o.status} />} />
+            <DetailCard label="Costo Envía" value={enviaCost ? moneyMXN(enviaCost) : "—"} />
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+            <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Resumen</p>
+            <p className="text-sm font-semibold text-slate-700">{o.items_summary || "Sin detalle."}</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <ActionCard
+              title="Stripe"
+              subtitle={o.stripe_session_id ? "Checkout Session" : "Sin session"}
+              primaryLabel="Abrir"
+              primaryIcon={<ExternalLink size={14} />}
+              primaryAction={openStripe}
+              secondaryLabel="Copiar"
+              secondaryIcon={<Copy size={14} />}
+              secondaryAction={() => copy(o.stripe_session_id)}
+              disabled={!o.stripe_session_id}
+            />
+            <ActionCard
+              title="Guía Envía"
+              subtitle={l?.tracking_number ? `Tracking: ${l.tracking_number}` : "No existe guía"}
+              primaryLabel="Etiqueta"
+              primaryIcon={<ExternalLink size={14} />}
+              primaryAction={openLabel}
+              secondaryLabel="Copiar"
+              secondaryIcon={<Copy size={14} />}
+              secondaryAction={() => copy(l?.tracking_number)}
+              disabled={!l?.label_url && !l?.tracking_number}
+            />
+          </div>
+
+          {canWrite && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-4">
+              <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">Acciones</p>
+              <div className="flex flex-wrap gap-2">
+                {canRefund(role) && String(o.status).toLowerCase() === "paid" && (
+                  <button onClick={refund} className="px-3 py-2 rounded-xl bg-rose-600 text-white hover:opacity-90 font-black text-xs flex items-center gap-2">
+                    <BadgeDollarSign size={14} /> Reembolsar
+                  </button>
+                )}
+                <button onClick={onClose} className="px-3 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90 font-black text-xs flex items-center gap-2">
+                  <X size={14} /> Cerrar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="p-5 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+          <p className="text-xs font-bold text-slate-500">{o.created_at ? `Creado: ${new Date(o.created_at).toLocaleString("es-MX")}` : ""}</p>
+          <button onClick={onClose} className="px-4 py-2.5 rounded-xl bg-slate-900 text-white font-black text-xs hover:opacity-90">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailCard({ label, value }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-4">
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">{label}</p>
+      <div className="text-lg font-black text-slate-900">{value}</div>
+    </div>
+  );
+}
+
+function ActionCard({ title, subtitle, primaryLabel, primaryIcon, primaryAction, secondaryLabel, secondaryIcon, secondaryAction, disabled }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between gap-3">
+      <div>
+        <p className="font-black text-slate-900">{title}</p>
+        <p className="text-xs font-semibold text-slate-500">{subtitle}</p>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={secondaryAction} disabled={disabled} className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 font-black text-xs flex items-center gap-2 disabled:opacity-50">
+          {secondaryIcon} {secondaryLabel}
+        </button>
+        <button onClick={primaryAction} disabled={disabled} className="px-3 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90 font-black text-xs flex items-center gap-2 disabled:opacity-50">
+          {primaryIcon} {primaryLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ status }) {
+  const s = String(status || "").toLowerCase();
+  if (s === "paid") return <span className="bg-emerald-50 text-emerald-700 font-black px-3 py-1 rounded-full text-xs flex items-center gap-1 w-max border border-emerald-100"><CheckCircle size={12} /> Pagado</span>;
+  if (s === "pending_payment" || s === "pending") return <span className="bg-amber-50 text-amber-700 font-black px-3 py-1 rounded-full text-xs flex items-center gap-1 w-max border border-amber-100"><AlertTriangle size={12} /> Pendiente</span>;
+  if (s === "payment_failed") return <span className="bg-rose-50 text-rose-700 font-black px-3 py-1 rounded-full text-xs flex items-center gap-1 w-max border border-rose-100"><XCircle size={12} /> Fallido</span>;
+  if (s === "refunded") return <span className="bg-sky-50 text-sky-700 font-black px-3 py-1 rounded-full text-xs flex items-center gap-1 w-max border border-sky-100"><BadgeDollarSign size={12} /> Reembolsado</span>;
+  return <span className="bg-slate-100 text-slate-700 font-black px-3 py-1 rounded-full text-xs w-max border border-slate-200">{status || "—"}</span>;
+}
+
+/* =========================================================
+   SHIPPING (Envía)
+   ========================================================= */
+function ShippingView({ orgId, showToast }) {
+  const [rows, setRows] = useState([]);
+  const [busy, setBusy] = useState(true);
+
+  const load = async () => {
+    setBusy(true);
+    try {
+      const { data } = await supabase
+        .from("shipping_labels")
+        .select("stripe_session_id, tracking_number, label_url, status, updated_at, raw")
+        .eq("org_id", orgId)
+        .order("updated_at", { ascending: false })
+        .limit(60);
+
+      setRows(data || []);
+    } catch (e) {
+      showToast?.({ type: "error", text: "No se pudieron cargar envíos." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId]);
+
+  return (
+    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm tech-shadow overflow-hidden">
+      <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+        <div>
+          <h3 className="font-black text-xl text-slate-900">Envíos</h3>
+          <p className="text-sm font-semibold text-slate-600">Guías generadas por Envía y tracking centralizado.</p>
+        </div>
+        <button onClick={load} className="px-3 py-2.5 rounded-xl bg-slate-900 text-white font-black text-sm flex items-center gap-2 hover:opacity-90">
           <RefreshCcw size={16} /> Actualizar
         </button>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-xl overflow-hidden">
-        {loading ? (
-          <div className="p-10 text-slate-500 font-bold">Cargando...</div>
-        ) : orders.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-950 border-b border-slate-800">
-                <tr className="text-left text-slate-500 font-black uppercase tracking-wider text-xs">
-                  <th className="px-6 py-4">ID</th>
-                  <th className="px-6 py-4">Cliente</th>
-                  <th className="px-6 py-4">Estado</th>
-                  <th className="px-6 py-4">Total</th>
-                  <th className="px-6 py-4">Fecha</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((o) => (
-                  <tr key={o.id} className="border-b border-slate-800 hover:bg-slate-950/40">
-                    <td className="px-6 py-4 font-black text-white">{o.id}</td>
-                    <td className="px-6 py-4 text-slate-300 font-bold">{o.customer_name || "-"}</td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-black ${
-                          o.status === "paid"
-                            ? "bg-emerald-600/15 text-emerald-400 border border-emerald-500/20"
-                            : "bg-yellow-600/15 text-yellow-400 border border-yellow-500/20"
-                        }`}
-                      >
-                        {o.status || "unknown"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-white font-black">{moneyMXN(o.amount_total_mxn)}</td>
-                    <td className="px-6 py-4 text-slate-400 font-bold">
-                      {o.created_at ? new Date(o.created_at).toLocaleString("es-MX") : "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <div className="overflow-x-auto custom-scrollbar">
+        {busy ? (
+          <div className="p-10 text-center text-slate-500 font-bold">Cargando…</div>
+        ) : rows.length === 0 ? (
+          <div className="p-10 text-center text-slate-500 font-bold">Todavía no hay guías.</div>
         ) : (
-          <div className="p-10 text-slate-500 font-bold">Sin órdenes.</div>
+          <table className="w-full text-sm whitespace-nowrap">
+            <thead className="bg-slate-50 text-slate-600 uppercase text-[11px] tracking-widest font-black border-b border-slate-200">
+              <tr>
+                <th className="p-4 text-left pl-6">Estatus</th>
+                <th className="p-4 text-left">Tracking</th>
+                <th className="p-4 text-left">Costo</th>
+                <th className="p-4 text-left">Actualizado</th>
+                <th className="p-4 text-right pr-6">Acción</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((r) => (
+                <tr key={r.stripe_session_id || r.tracking_number} className="hover:bg-slate-50">
+                  <td className="p-4 pl-6 font-black text-slate-900">{String(r.status || "—").toUpperCase()}</td>
+                  <td className="p-4 font-mono font-black text-sky-700">{r.tracking_number || "—"}</td>
+                  <td className="p-4 font-black text-slate-900">{extractEnviaCost(r.raw) ? moneyMXN(extractEnviaCost(r.raw)) : "—"}</td>
+                  <td className="p-4 text-slate-600 font-semibold">{r.updated_at ? new Date(r.updated_at).toLocaleString("es-MX") : "—"}</td>
+                  <td className="p-4 pr-6 text-right">
+                    {r.label_url ? (
+                      <button onClick={() => window.open(r.label_url, "_blank", "noopener,noreferrer")} className="px-3 py-2 rounded-xl bg-slate-900 text-white font-black text-xs hover:opacity-90 inline-flex items-center gap-2">
+                        <ExternalLink size={14} /> Ver etiqueta
+                      </button>
+                    ) : (
+                      <span className="text-xs font-black text-slate-500">Sin etiqueta</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
     </div>
   );
 }
 
-function ModuleShipping({ orgId }) {
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 shadow-xl">
-      <div className="flex items-center gap-4 mb-3">
-        <div className="w-12 h-12 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center">
-          <Truck className="text-blue-400" size={20} />
-        </div>
-        <div>
-          <h3 className="text-3xl font-black text-white">Envíos</h3>
-          <p className="text-slate-500 font-medium text-sm">
-            Módulo listo para conectar Envia.com / guías.
-          </p>
-        </div>
-      </div>
-      <p className="text-slate-300 text-sm leading-relaxed">
-        Este módulo está preparado para listar envíos por organización y actualizar estatus desde
-        el backend.
-      </p>
-    </div>
-  );
-}
-
-function ModuleCustomers({ orgId }) {
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 shadow-xl">
-      <div className="flex items-center gap-4 mb-3">
-        <div className="w-12 h-12 rounded-2xl bg-purple-600/10 border border-purple-500/20 flex items-center justify-center">
-          <Users className="text-purple-400" size={20} />
-        </div>
-        <div>
-          <h3 className="text-3xl font-black text-white">Clientes</h3>
-          <p className="text-slate-500 font-medium text-sm">CRM básico por organización.</p>
-        </div>
-      </div>
-      <p className="text-slate-300 text-sm leading-relaxed">
-        Aquí puedes conectar tabla <span className="font-black text-white">customers</span> y segmentación.
-      </p>
-    </div>
-  );
-}
-
-function ModuleProducts({ orgId }) {
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 shadow-xl">
-      <div className="flex items-center gap-4 mb-3">
-        <div className="w-12 h-12 rounded-2xl bg-emerald-600/10 border border-emerald-500/20 flex items-center justify-center">
-          <Package className="text-emerald-400" size={20} />
-        </div>
-        <div>
-          <h3 className="text-3xl font-black text-white">Productos</h3>
-          <p className="text-slate-500 font-medium text-sm">Catálogo por organización.</p>
-        </div>
-      </div>
-      <p className="text-slate-300 text-sm leading-relaxed">
-        Preparado para conectar inventario, variantes y precios.
-      </p>
-    </div>
-  );
-}
-
-function ModuleMarketing({ orgId }) {
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 shadow-xl">
-      <div className="flex items-center gap-4 mb-3">
-        <div className="w-12 h-12 rounded-2xl bg-yellow-600/10 border border-yellow-500/20 flex items-center justify-center">
-          <Megaphone className="text-yellow-400" size={20} />
-        </div>
-        <div>
-          <h3 className="text-3xl font-black text-white">Marketing</h3>
-          <p className="text-slate-500 font-medium text-sm">Campañas, cupones y anuncios.</p>
-        </div>
-      </div>
-      <p className="text-slate-300 text-sm leading-relaxed">
-        Este módulo queda listo para conectar Ads / promociones y reporting.
-      </p>
-    </div>
-  );
-}
-
-function ModuleTeam({ orgId }) {
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 shadow-xl">
-      <div className="flex items-center gap-4 mb-3">
-        <div className="w-12 h-12 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center">
-          <Users className="text-blue-400" size={20} />
-        </div>
-        <div>
-          <h3 className="text-3xl font-black text-white">Equipo</h3>
-          <p className="text-slate-500 font-medium text-sm">Roles y accesos por organización.</p>
-        </div>
-      </div>
-      <p className="text-slate-300 text-sm leading-relaxed">
-        Aquí se conecta directo con <span className="font-black text-white">admin_users</span>.
-      </p>
-    </div>
-  );
-}
-
-function ModuleIntegrations({ orgId }) {
-  return (
-    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-10 shadow-xl">
-      <div className="flex items-center gap-4 mb-3">
-        <div className="w-12 h-12 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center">
-          <Info className="text-slate-300" size={20} />
-        </div>
-        <div>
-          <h3 className="text-3xl font-black text-white">Integraciones</h3>
-          <p className="text-slate-500 font-medium text-sm">Stripe / MercadoPago / Envia.</p>
-        </div>
-      </div>
-      <p className="text-slate-300 text-sm leading-relaxed">
-        Panel central para activar llaves, webhooks y salud de integraciones.
-      </p>
-    </div>
-  );
-}
-
-function UnicoIAWidget({ orgId }) {
+/* =========================================================
+   PRODUCTS (Supabase)
+   ========================================================= */
+function ProductsView({ orgId, role, showToast }) {
+  const canEdit = ["owner", "admin", "ops"].includes(String(role || "").toLowerCase());
+  const [busy, setBusy] = useState(true);
+  const [rows, setRows] = useState([]);
+  const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
-  const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [messages, setMessages] = useState([
-    { role: "assistant", content: "Listo. Dime qué necesitas y lo ejecuto." },
-  ]);
+  const [editing, setEditing] = useState(null);
 
-  const bottomRef = useRef(null);
+  const load = async () => {
+    setBusy(true);
+    try {
+      let query = supabase
+        .from("products")
+        .select("id, name, sku, price_mxn, stock, category, image_url, is_active, created_at")
+        .eq("organization_id", orgId)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (q.trim()) query = query.or(`name.ilike.%${q.trim()}%,sku.ilike.%${q.trim()}%`);
+
+      const { data } = await query;
+      setRows(data || []);
+    } catch (e) {
+      showToast?.({ type: "error", text: "No se pudieron cargar productos." });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
-  }, [messages, open]);
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, q]);
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm tech-shadow p-6 flex items-end justify-between gap-3">
+        <div>
+          <h3 className="font-black text-xl text-slate-900">Productos</h3>
+          <p className="text-sm font-semibold text-slate-600">Inventario y precios (Supabase).</p>
+        </div>
+
+        <div className="flex gap-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-3 text-slate-400" size={18} />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar…" className="pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600 w-[240px]" />
+          </div>
+          {canEdit && (
+            <button onClick={() => { setEditing(null); setOpen(true); }} className="px-4 py-2.5 rounded-xl text-white font-black text-sm" style={{ background: "linear-gradient(135deg,#0EA5E9,#14B8A6)" }}>
+              + Nuevo
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm tech-shadow overflow-hidden">
+        {busy ? (
+          <div className="p-10 text-center text-slate-500 font-bold">Cargando…</div>
+        ) : (
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full text-sm whitespace-nowrap">
+              <thead className="bg-slate-50 text-slate-600 uppercase text-[11px] tracking-widest font-black border-b border-slate-200">
+                <tr>
+                  <th className="p-4 text-left pl-6">Producto</th>
+                  <th className="p-4 text-left">SKU</th>
+                  <th className="p-4 text-left">Precio</th>
+                  <th className="p-4 text-left">Stock</th>
+                  <th className="p-4 text-left">Estado</th>
+                  <th className="p-4 text-right pr-6">Acción</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((p) => (
+                  <tr key={p.id} className="hover:bg-slate-50">
+                    <td className="p-4 pl-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center">
+                          {p.image_url ? <img src={p.image_url} alt="" className="w-full h-full object-cover" /> : <Package size={18} className="text-slate-400" />}
+                        </div>
+                        <div>
+                          <p className="font-black text-slate-900">{p.name}</p>
+                          <p className="text-xs font-semibold text-slate-500">{p.category || "—"}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-4 font-mono font-black text-sky-700">{p.sku || "—"}</td>
+                    <td className="p-4 font-black text-slate-900">{moneyMXN(p.price_mxn)}</td>
+                    <td className="p-4 font-black text-slate-900">{num(p.stock)}</td>
+                    <td className="p-4">
+                      {p.is_active ? <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-50 border border-emerald-100 text-emerald-700">Activo</span> : <span className="px-3 py-1 rounded-full text-xs font-black bg-slate-100 border border-slate-200 text-slate-700">Oculto</span>}
+                    </td>
+                    <td className="p-4 pr-6 text-right">
+                      {canEdit ? (
+                        <button onClick={() => { setEditing(p); setOpen(true); }} className="px-3 py-2 rounded-xl bg-slate-900 text-white font-black text-xs hover:opacity-90">
+                          Editar
+                        </button>
+                      ) : (
+                        <span className="text-xs font-black text-slate-500">Solo lectura</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {rows.length === 0 && <tr><td colSpan={6} className="p-10 text-center text-slate-500 font-bold">Sin productos.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {open && (
+        <ProductModal
+          orgId={orgId}
+          editing={editing}
+          onClose={() => setOpen(false)}
+          onDone={() => { setOpen(false); load(); }}
+          showToast={showToast}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProductModal({ orgId, editing, onClose, onDone, showToast }) {
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({
+    name: editing?.name || "",
+    sku: editing?.sku || "",
+    price_mxn: editing?.price_mxn || 0,
+    stock: editing?.stock || 0,
+    category: editing?.category || "BAJA_1000",
+    is_active: editing?.is_active ?? true,
+    image_url: editing?.image_url || "",
+  });
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const payload = {
+        organization_id: orgId,
+        name: String(form.name || "").trim(),
+        sku: String(form.sku || "").trim() || null,
+        price_mxn: Number(form.price_mxn || 0),
+        stock: Number(form.stock || 0),
+        category: String(form.category || "").trim() || null,
+        is_active: Boolean(form.is_active),
+        image_url: String(form.image_url || "").trim() || null,
+      };
+
+      if (!payload.name) throw new Error("Nombre requerido.");
+
+      if (editing?.id) {
+        const { error } = await supabase.from("products").update(payload).eq("id", editing.id).eq("organization_id", orgId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("products").insert(payload);
+        if (error) throw error;
+      }
+
+      showToast?.({ type: "success", text: "Producto guardado." });
+      onDone?.();
+    } catch (e) {
+      showToast?.({ type: "error", text: e?.message || "Error guardando." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm p-4 flex items-end md:items-center justify-center">
+      <div className="w-full max-w-xl bg-white rounded-[2rem] border border-slate-200 shadow-2xl overflow-hidden animate-slide-up">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-slate-500">{editing ? "Editar producto" : "Nuevo producto"}</p>
+            <h4 className="text-xl font-black text-slate-900">{editing ? editing.name : "Crear"}</h4>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200"><X size={18} /></button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="text-xs font-black uppercase tracking-widest text-slate-500">Nombre</label>
+            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800" />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-black uppercase tracking-widest text-slate-500">SKU</label>
+              <input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800" />
+            </div>
+            <div>
+              <label className="text-xs font-black uppercase tracking-widest text-slate-500">Categoría</label>
+              <input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-black uppercase tracking-widest text-slate-500">Precio (MXN)</label>
+              <input type="number" value={form.price_mxn} onChange={(e) => setForm({ ...form, price_mxn: e.target.value })} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800" />
+            </div>
+            <div>
+              <label className="text-xs font-black uppercase tracking-widest text-slate-500">Stock</label>
+              <input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800" />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-black uppercase tracking-widest text-slate-500">Imagen (URL)</label>
+            <input value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800" placeholder="https://..." />
+          </div>
+
+          <label className="flex items-center gap-3">
+            <input type="checkbox" checked={!!form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} className="w-5 h-5 accent-sky-600" />
+            <span className="font-black text-slate-800">Producto activo</span>
+          </label>
+
+          <button disabled={busy} onClick={save} className="w-full py-4 rounded-xl text-white font-black disabled:opacity-50" style={{ background: "linear-gradient(135deg,#0EA5E9,#14B8A6)" }}>
+            {busy ? "GUARDANDO…" : "GUARDAR"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   CRM
+   ========================================================= */
+function CRMView({ orgId }) {
+  const [customers, setCustomers] = useState([]);
+  const [busy, setBusy] = useState(true);
+
+  useEffect(() => {
+    setBusy(true);
+    supabase
+      .from("orders")
+      .select("email, customer_name, phone, amount_total_mxn, created_at")
+      .eq("organization_id", orgId)
+      .eq("status", "paid")
+      .then(({ data }) => {
+        const map = {};
+        (data || []).forEach((o) => {
+          if (!o.email) return;
+          if (!map[o.email]) map[o.email] = { email: o.email, name: o.customer_name, phone: o.phone, ltv: 0, orders: 0, last: o.created_at };
+          map[o.email].ltv += Number(o.amount_total_mxn || 0);
+          map[o.email].orders += 1;
+          if (new Date(o.created_at) > new Date(map[o.email].last)) map[o.email].last = o.created_at;
+        });
+        setCustomers(Object.values(map).sort((a, b) => b.ltv - a.ltv));
+        setBusy(false);
+      })
+      .catch(() => setBusy(false));
+  }, [orgId]);
+
+  return (
+    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden tech-shadow animate-slide-up">
+      <div className="p-6 border-b border-slate-100 bg-slate-50/70">
+        <h3 className="font-black text-xl text-slate-900">Clientes (LTV)</h3>
+        <p className="text-sm font-semibold text-slate-600">Ranking por valor total de compra.</p>
+      </div>
+
+      <div className="overflow-x-auto custom-scrollbar">
+        <table className="w-full text-left text-sm whitespace-nowrap">
+          <thead className="bg-slate-50 text-slate-600 font-black border-b border-slate-200 text-[11px] uppercase tracking-widest">
+            <tr><th className="px-6 py-4">Cliente</th><th className="px-6 py-4">Compras</th><th className="px-6 py-4">Última</th><th className="px-6 py-4 text-right">LTV</th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {busy ? (
+              <tr><td colSpan={4} className="px-6 py-10 text-slate-500 font-bold">Cargando…</td></tr>
+            ) : customers.length ? (
+              customers.map((c) => (
+                <tr key={c.email} className="hover:bg-slate-50">
+                  <td className="px-6 py-4"><p className="font-black text-slate-900">{c.name || "—"}</p><p className="text-xs font-semibold text-slate-500">{c.email} {c.phone ? `• ${c.phone}` : ""}</p></td>
+                  <td className="px-6 py-4 font-black text-slate-700">{c.orders} pedidos</td>
+                  <td className="px-6 py-4 font-semibold text-slate-600">{c.last ? new Date(c.last).toLocaleDateString("es-MX") : "—"}</td>
+                  <td className="px-6 py-4 font-black text-sky-700 text-right">{moneyMXN(c.ltv)}</td>
+                </tr>
+              ))
+            ) : (
+              <tr><td colSpan={4} className="text-center p-10 text-slate-500 font-bold">Sin clientes.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   MARKETING
+   ========================================================= */
+function MarketingView({ orgId, showToast }) {
+  const [cfg, setCfg] = useState({ promo_active: false, promo_text: "", pixel_id: "" });
+  const [busy, setBusy] = useState(true);
+
+  useEffect(() => {
+    setBusy(true);
+    supabase
+      .from("site_settings")
+      .select("promo_active, promo_text, pixel_id")
+      .eq("organization_id", orgId)
+      .single()
+      .then(({ data }) => {
+        if (data) setCfg({ promo_active: !!data.promo_active, promo_text: data.promo_text || "", pixel_id: data.pixel_id || "" });
+        setBusy(false);
+      })
+      .catch(() => setBusy(false));
+  }, [orgId]);
+
+  const save = async () => {
+    try {
+      const payload = {
+        organization_id: orgId,
+        promo_active: !!cfg.promo_active,
+        promo_text: String(cfg.promo_text || ""),
+        pixel_id: String(cfg.pixel_id || "") || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      // upsert (si no existe, se crea)
+      const { error } = await supabase.from("site_settings").upsert(payload, { onConflict: "organization_id" });
+      if (error) throw error;
+
+      showToast?.({ type: "success", text: "Marketing guardado." });
+    } catch {
+      showToast?.({ type: "error", text: "No se pudo guardar." });
+    }
+  };
+
+  return (
+    <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm tech-shadow max-w-xl animate-slide-up">
+      <h3 className="font-black text-xl text-slate-900 mb-2">Marketing</h3>
+      <p className="text-sm font-semibold text-slate-600">Banner superior + Pixel.</p>
+
+      <div className="mt-6 flex items-center gap-3">
+        <input type="checkbox" checked={cfg.promo_active || false} onChange={(e) => setCfg({ ...cfg, promo_active: e.target.checked })} className="w-5 h-5 accent-sky-600" disabled={busy} />
+        <span className="font-black text-slate-800">Activar banner</span>
+      </div>
+
+      <textarea value={cfg.promo_text || ""} onChange={(e) => setCfg({ ...cfg, promo_text: e.target.value })} className="mt-4 w-full border-2 border-slate-100 rounded-xl p-4 font-bold text-slate-800 outline-none focus:border-sky-600 bg-slate-50" placeholder="Ej. ENVÍO GRATIS A TODO MÉXICO" rows={3} disabled={busy} />
+
+      <div className="mt-4">
+        <label className="text-xs font-black uppercase tracking-widest text-slate-500">Pixel ID</label>
+        <input value={cfg.pixel_id || ""} onChange={(e) => setCfg({ ...cfg, pixel_id: e.target.value })} className="mt-1 w-full border-2 border-slate-100 rounded-xl p-3 font-bold text-slate-800 outline-none focus:border-sky-600 bg-slate-50" placeholder="Meta Pixel ID" disabled={busy} />
+      </div>
+
+      <button onClick={save} className="mt-5 w-full text-white font-black py-4 rounded-xl transition-colors disabled:opacity-50" style={{ background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" }} disabled={busy}>
+        Publicar
+      </button>
+    </div>
+  );
+}
+
+/* =========================================================
+   USERS
+   ========================================================= */
+function UsersView({ orgId, token, role, showToast }) {
+  const [members, setMembers] = useState([]);
+  const [busy, setBusy] = useState(true);
+  const [inviteOpen, setInviteOpen] = useState(false);
+
+  const canInvite = canManageUsers(role);
+
+  const load = async () => {
+    setBusy(true);
+    try {
+      const { data } = await supabase
+        .from("admin_users")
+        .select("id, email, role, is_active, created_at")
+        .eq("organization_id", orgId)
+        .order("created_at", { ascending: false });
+
+      setMembers(data || []);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [orgId]);
+
+  return (
+    <div className="space-y-4 animate-slide-up">
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 tech-shadow flex items-start justify-between gap-4">
+        <div>
+          <h3 className="font-black text-xl text-slate-900">Equipo</h3>
+          <p className="text-sm font-semibold text-slate-600">Usuarios y roles por organización.</p>
+        </div>
+
+        {canInvite && (
+          <button onClick={() => setInviteOpen(true)} className="px-4 py-2.5 rounded-xl text-white font-black text-sm flex items-center gap-2" style={{ background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" }}>
+            <Users size={16} /> Invitar
+          </button>
+        )}
+      </div>
+
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm tech-shadow overflow-hidden">
+        <div className="overflow-x-auto custom-scrollbar">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="bg-slate-50 text-slate-600 font-black border-b border-slate-200 text-[11px] uppercase tracking-widest">
+              <tr><th className="px-6 py-4">Correo</th><th className="px-6 py-4">Rol</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4">Creado</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {busy ? (
+                <tr><td colSpan={4} className="px-6 py-10 text-slate-500 font-bold">Cargando…</td></tr>
+              ) : members.length ? (
+                members.map((m) => (
+                  <tr key={m.id} className="hover:bg-slate-50">
+                    <td className="px-6 py-4 font-black text-slate-900">{m.email}</td>
+                    <td className="px-6 py-4"><span className="px-3 py-1 rounded-full text-xs font-black bg-slate-100 border border-slate-200 text-slate-700">{m.role}</span></td>
+                    <td className="px-6 py-4">{m.is_active ? <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-50 border border-emerald-100 text-emerald-700">Activo</span> : <span className="px-3 py-1 rounded-full text-xs font-black bg-rose-50 border border-rose-100 text-rose-700">Inactivo</span>}</td>
+                    <td className="px-6 py-4 font-semibold text-slate-600">{m.created_at ? new Date(m.created_at).toLocaleDateString("es-MX") : "—"}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr><td colSpan={4} className="text-center p-10 text-slate-500 font-bold">Sin usuarios.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {inviteOpen && (
+        <InviteModal
+          orgId={orgId}
+          token={token}
+          onClose={() => setInviteOpen(false)}
+          onDone={() => { setInviteOpen(false); load(); }}
+          showToast={showToast}
+        />
+      )}
+    </div>
+  );
+}
+
+function InviteModal({ orgId, token, onClose, onDone, showToast }) {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("staff");
+  const [busy, setBusy] = useState(false);
+
+  const send = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ organization_id: orgId, email: normEmail(email), role }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || "No se pudo invitar.");
+
+      showToast?.({ type: "success", text: "Invitación enviada." });
+      onDone?.();
+    } catch (e) {
+      showToast?.({ type: "error", text: e?.message || "Error al invitar." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm p-4 flex items-end md:items-center justify-center">
+      <div className="w-full max-w-lg bg-white rounded-[2rem] border border-slate-200 shadow-2xl overflow-hidden animate-slide-up">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-slate-500">Invitar usuario</p>
+            <h4 className="text-xl font-black text-slate-900">Acceso al panel</h4>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200"><X size={18} /></button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="text-xs font-black uppercase tracking-widest text-slate-500">Correo</label>
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="persona@empresa.com" className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 focus:ring-4 focus:ring-sky-600/10 transition-all font-bold text-slate-800" />
+          </div>
+
+          <div>
+            <label className="text-xs font-black uppercase tracking-widest text-slate-500">Rol</label>
+            <select value={role} onChange={(e) => setRole(e.target.value)} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 focus:ring-4 focus:ring-sky-600/10 transition-all font-black text-slate-800">
+              <option value="owner">Owner</option>
+              <option value="admin">Admin</option>
+              <option value="ops">Ops</option>
+              <option value="sales">Sales</option>
+              <option value="marketing">Marketing</option>
+              <option value="staff">Staff</option>
+              <option value="viewer">Viewer</option>
+            </select>
+          </div>
+
+          <button onClick={send} disabled={busy || !email.trim()} className="w-full py-4 rounded-xl text-white font-black disabled:opacity-50" style={{ background: "linear-gradient(135deg,#0EA5E9,#14B8A6)" }}>
+            {busy ? "ENVIANDO…" : "ENVIAR INVITACIÓN"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   INTEGRATIONS
+   ========================================================= */
+function IntegrationsView({ token, showToast }) {
+  const [busy, setBusy] = useState(true);
+  const [env, setEnv] = useState(null);
+
+  const load = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/health", { headers: { Authorization: `Bearer ${token}` } });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || "No se pudo consultar salud.");
+      setEnv(j?.env || null);
+    } catch (e) {
+      setEnv(null);
+      showToast?.({ type: "error", text: "No se pudo leer estado." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  return (
+    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 tech-shadow">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-black text-xl text-slate-900 mb-1">Integraciones</h3>
+          <p className="text-sm font-semibold text-slate-600">Checklist real de producción (variables del servidor).</p>
+        </div>
+        <button onClick={load} className="px-3 py-2.5 rounded-xl bg-slate-900 text-white font-black text-sm flex items-center gap-2 hover:opacity-90">
+          <RefreshCcw size={16} /> Actualizar
+        </button>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <EnvCard label="Supabase URL" ok={!!env?.SUPABASE_URL} />
+        <EnvCard label="Supabase Secret" ok={!!env?.SUPABASE_SECRET_KEY} />
+        <EnvCard label="Gemini (IA)" ok={!!env?.GEMINI_API_KEY} />
+        <EnvCard label="Stripe Secret" ok={!!env?.STRIPE_SECRET_KEY} />
+        <EnvCard label="Envía API Key" ok={!!env?.ENVIA_API_KEY} />
+        <EnvCard label="FX USD→MXN" ok={!!env?.FX_USD_TO_MXN} />
+      </div>
+
+      {busy && <p className="mt-4 text-sm font-bold text-slate-500">Cargando estado…</p>}
+    </div>
+  );
+}
+
+function EnvCard({ label, ok }) {
+  return (
+    <div className="border border-slate-200 rounded-2xl p-4 flex items-center justify-between">
+      <div>
+        <p className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</p>
+        <p className="text-sm font-black text-slate-900 mt-1">{ok ? "CONFIGURADO" : "FALTA"}</p>
+      </div>
+      <div className={clsx("w-10 h-10 rounded-2xl flex items-center justify-center border", ok ? "bg-emerald-50 border-emerald-100 text-emerald-700" : "bg-rose-50 border-rose-100 text-rose-700")}>
+        {ok ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   AI SIDEKICK (accesible desde cualquier pantalla)
+   ========================================================= */
+function AISidekick({ orgId, token, onClose }) {
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [messages, setMessages] = useState([{ role: "assistant", content: "Listo. Dime qué necesitas y lo hago." }]);
+  const bottomRef = useRef(null);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView?.({ behavior: "smooth" }); }, [messages]);
 
   const send = async () => {
     const q = input.trim();
@@ -778,103 +1814,107 @@ function UnicoIAWidget({ orgId }) {
     try {
       const res = await fetch("/api/ai", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orgId, prompt: q }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ message: q, organization_id: orgId }),
       });
 
       const json = await res.json().catch(() => ({}));
-      const answer = json?.answer || "No pude responder (sin salida).";
+      if (!res.ok) throw new Error(json?.error || "Error IA");
 
-      setMessages((m) => [...m, { role: "assistant", content: answer }]);
-    } catch {
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: "Error de red. Reintenta." },
-      ]);
+      setMessages((m) => [...m, { role: "assistant", content: json?.reply || "OK" }]);
+    } catch (e) {
+      setMessages((m) => [...m, { role: "assistant", content: "Error: " + String(e?.message || e) }]);
     } finally {
       setSending(false);
     }
   };
 
   return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-50 bg-blue-600 hover:bg-blue-500 text-white rounded-full w-14 h-14 shadow-2xl shadow-blue-500/30 flex items-center justify-center"
-        title="Abrir Unico IA"
-      >
-        <Bot size={26} />
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-xl bg-slate-950 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-600/20 border border-blue-500/30 rounded-xl flex items-center justify-center">
-                  <Sparkles size={18} className="text-blue-400" />
-                </div>
-                <div>
-                  <h4 className="font-black text-white">Unico IA</h4>
-                  <p className="text-xs text-slate-500 font-medium">Agente Operativo</p>
-                </div>
-              </div>
-              <button onClick={() => setOpen(false)} className="p-2 hover:bg-slate-900 rounded-xl">
-                <X size={18} className="text-slate-400" />
-              </button>
+    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm p-4 flex items-end md:items-center justify-center">
+      <div className="w-full max-w-2xl bg-white rounded-[2rem] border border-slate-200 shadow-2xl overflow-hidden animate-slide-up">
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-white" style={{ background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" }}>
+              <Bot size={18} />
             </div>
-
-            <div className="p-5 h-[52vh] md:h-[60vh] overflow-y-auto space-y-4">
-              {messages.map((m, idx) => (
-                <div
-                  key={idx}
-                  className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                    m.role === "assistant"
-                      ? "bg-slate-900 border border-slate-800 text-slate-200"
-                      : "bg-blue-600 text-white ml-auto"
-                  }`}
-                >
-                  {m.content}
-                </div>
-              ))}
-              <div ref={bottomRef} />
-            </div>
-
-            <div className="p-4 border-t border-slate-800 flex gap-3">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") send();
-                }}
-                className="flex-1 bg-slate-900 border border-slate-700 text-white font-bold px-4 py-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder={orgId ? "Escribe una instrucción..." : "Selecciona organización..."}
-                disabled={!orgId || sending}
-              />
-              <button
-                onClick={send}
-                disabled={!orgId || sending || !input.trim()}
-                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-black px-5 py-3 rounded-xl flex items-center gap-2"
-              >
-                <Send size={16} /> {sending ? "Enviando" : "Enviar"}
-              </button>
+            <div>
+              <p className="font-black text-slate-900">Unico IA</p>
+              <p className="text-xs font-semibold text-slate-500">Asistente operativo</p>
             </div>
           </div>
+          <button onClick={onClose} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200"><X size={18} /></button>
         </div>
-      )}
-    </>
+
+        <div className="p-5 h-[55vh] md:h-[60vh] overflow-y-auto space-y-3 custom-scrollbar">
+          {messages.map((m, idx) => (
+            <div
+              key={idx}
+              className={clsx(
+                "max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-relaxed font-semibold",
+                m.role === "assistant" ? "bg-slate-50 border border-slate-200 text-slate-800" : "text-white ml-auto"
+              )}
+              style={m.role === "user" ? { background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" } : undefined}
+            >
+              {m.content}
+            </div>
+          ))}
+          <div ref={bottomRef} />
+        </div>
+
+        <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && send()}
+            className="flex-1 bg-white border border-slate-200 text-slate-800 font-bold px-4 py-3 rounded-xl outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+            placeholder="Escribe una instrucción…"
+            disabled={sending}
+          />
+          <button onClick={send} disabled={sending || !input.trim()} className="px-5 py-3 rounded-xl text-white font-black flex items-center gap-2 disabled:opacity-50" style={{ background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" }}>
+            <Send size={16} /> {sending ? "Enviando" : "Enviar"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
-export default function Home() {
-  const [session, setSession] = useState(null);
+/* =========================================================
+   UI UTILITIES
+   ========================================================= */
+function Toast({ t }) {
+  const tone = t?.type === "success" ? "bg-emerald-600" : t?.type === "error" ? "bg-rose-600" : "bg-slate-900";
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60]">
+      <div className={clsx("px-5 py-3 rounded-2xl text-white font-black shadow-2xl", tone)}>{t?.text || ""}</div>
+    </div>
+  );
+}
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data?.session || null));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => sub?.subscription?.unsubscribe?.();
-  }, []);
+function LoadingScreen() {
+  return (
+    <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50">
+      <div className="h-16 w-16 rounded-2xl animate-pulse flex items-center justify-center shadow-[0_0_40px_rgba(14,165,233,0.25)] mb-6 overflow-hidden bg-white border border-slate-200">
+        <Image src={BRAND_ICON} alt="UnicOs" width={64} height={64} className="object-contain p-2" />
+      </div>
+      <p className="text-xs font-bold tracking-widest text-slate-500 uppercase">Estableciendo conexión…</p>
+    </div>
+  );
+}
 
-  if (!session) return <LoginScreen onLogin={setSession} />;
-  return <AdminDashboard session={session} />;
+function EmptyStateMultiTenant({ onExit }) {
+  return (
+    <div className="h-screen w-full flex items-center justify-center bg-slate-50 p-6">
+      <div className="max-w-md w-full bg-white border border-slate-200 rounded-[2rem] shadow-2xl p-8 text-center tech-shadow animate-slide-up">
+        <div className="mx-auto h-16 w-16 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mb-6">
+          <Shield size={32} />
+        </div>
+        <h2 className="text-xl font-black text-slate-900 mb-2">Acceso restringido</h2>
+        <p className="text-sm text-slate-500 font-medium leading-relaxed mb-6">
+          Tu cuenta existe, pero no está vinculada a ninguna organización con acceso admin.
+        </p>
+        <button onClick={onExit} className="text-sm font-bold text-slate-900 hover:text-sky-700 underline">Volver</button>
+      </div>
+    </div>
+  );
 }
