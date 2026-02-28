@@ -1,17 +1,12 @@
 import "./globals.css";
 import SwRegister from "./sw-register";
-import AiDock from "./ai-dock";
 
-/**
- * RootLayout (UnicOs)
- * - Light-first (alineado a branding)
- * - Mantener dynamic por arquitectura actual (y compatibilidad CSP nonce si aplica).
- */
+// CSP Nonce requiere render dinámico (para tener request/headers por visita)
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export const viewport = {
-  themeColor: "#0EA5E9",
+  themeColor: "#0f0f10",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -34,12 +29,10 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="es-MX" suppressHydrationWarning>
-      <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
+    <html lang="es-MX">
+      <body>
         <SwRegister />
         {children}
-        {/* IA global: accesible desde cualquier pantalla sin tocar tu arquitectura */}
-        <AiDock />
       </body>
     </html>
   );
