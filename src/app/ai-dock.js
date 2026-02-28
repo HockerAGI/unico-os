@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import clsx from "clsx";
-import { Bot, Sparkles, Send, X, ChevronDown, RefreshCcw } from "lucide-react";
+import { Bot, Sparkles, Send, X, ChevronDown, RefreshCcw, History, Search } from "lucide-react";
 
 const BRAND = {
   primaryLogo: "/logo-unico.png",
@@ -16,6 +16,7 @@ const normEmail = (s) => String(s || "").trim().toLowerCase();
 
 export default function AiDock() {
   const [open, setOpen] = useState(false);
+  const [view, setView] = useState("chat"); // chat | activity
 
   const [session, setSession] = useState(null);
   const token = session?.access_token || "";
@@ -32,6 +33,11 @@ export default function AiDock() {
   ]);
   const [input, setInput] = useState("");
 
+  // Activity
+  const [auditBusy, setAuditBusy] = useState(false);
+  const [auditRows, setAuditRows] = useState([]);
+  const [auditQ, setAuditQ] = useState("");
+
   const bottomRef = useRef(null);
   const [logoSrc, setLogoSrc] = useState(BRAND.primaryLogo);
 
@@ -39,7 +45,6 @@ export default function AiDock() {
     bottomRef.current?.scrollIntoView?.({ behavior: "smooth" });
   }, [messages, open]);
 
-  // Session watcher
   useEffect(() => {
     let unsub = null;
     (async () => {
@@ -55,7 +60,6 @@ export default function AiDock() {
     return () => unsub?.unsubscribe?.();
   }, []);
 
-  // Load orgs for logged user
   useEffect(() => {
     const run = async () => {
       if (!email) {
@@ -99,7 +103,6 @@ export default function AiDock() {
     run();
   }, [email]);
 
-  // Esc close
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape") setOpen(false);
@@ -112,15 +115,11 @@ export default function AiDock() {
 
   const quickActions = useMemo(
     () => [
-      { label: "Resumen ventas", prompt: "Dame un resumen de ventas del dashboard." },
-      { label: "Top clientes", prompt: "Muéstrame los top clientes." },
-      { label: "Envíos pendientes", prompt: "¿Qué envíos están pendientes? (tracking/estatus)" },
-      {
-        label: "Activar promo",
-        prompt: 'Activa una promo: "ENVÍO GRATIS A TODO MÉXICO 🚚🔥"',
-      },
-      { label: "Apagar promo", prompt: "Apaga la promo (megáfono)." },
-      { label: "Configurar Pixel", prompt: "Configura el Pixel con ID 123456789012345" },
+      { label: "Resumen ventas", prompt: "Resumen ventas" },
+      { label: "Top clientes", prompt: "Top clientes" },
+      { label: "Envíos pendientes", prompt: "Envíos pendientes" },
+      { label: "Activar promo", prompt: 'Activa promo: "ENVÍO GRATIS A TODO MÉXICO 🚚🔥"' },
+      { label: "Apagar promo", prompt: "Apaga promo" },
     ],
     []
   );
@@ -144,14 +143,8 @@ export default function AiDock() {
     try {
       const res = await fetch("/api/ai", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          message: msg,
-          organization_id: orgId,
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ message: msg, organization_id: orgId }),
       });
 
       const j = await res.json().catch(() => ({}));
@@ -168,14 +161,43 @@ export default function AiDock() {
     }
   };
 
-  // Hide dock if not logged
+  const loadAudit = async () => {
+    if (!canUse) return;
+    setAuditBusy(true);
+    try {
+      const res = await fetch(`/api/audit/list?org_id=${encodeURIComponent(orgId)}&limit=120`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) throw new Error(j?.error || "No se pudo cargar actividad.");
+      setAuditRows(j.rows || []);
+    } catch {
+      setAuditRows([]);
+    } finally {
+      setAuditBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (open && view === "activity") loadAudit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, view, orgId]);
+
+  const filteredAudit = useMemo(() => {
+    const q = auditQ.trim().toLowerCase();
+    if (!q) return auditRows;
+    return (auditRows || []).filter((r) => {
+      const hay = `${r.action || ""} ${r.actor_email || ""} ${r.summary || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [auditRows, auditQ]);
+
   if (!session) return null;
 
   return (
     <>
-      {/* Floating button */}
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => { setOpen(true); setView("chat"); }}
         className="fixed bottom-6 right-6 z-[80] px-4 py-3 rounded-2xl text-white font-black text-sm flex items-center gap-2 ai-fab"
         style={{
           background: BRAND.grad,
@@ -188,30 +210,24 @@ export default function AiDock() {
         IA
       </button>
 
-      {/* Modal */}
       {open && (
         <div className="fixed inset-0 z-[100] bg-slate-900/45 backdrop-blur-sm p-4 flex items-end md:items-center justify-center">
           <div className="w-full max-w-2xl bg-white rounded-[2rem] border border-slate-200 shadow-2xl overflow-hidden animate-slide-up">
             <div className="p-5 border-b border-slate-100 flex items-center justify-between">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-11 h-11 rounded-2xl border border-slate-200 bg-white overflow-hidden flex items-center justify-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={logoSrc}
                     alt="UnicOs"
                     className="w-full h-full object-contain p-2"
-                    onError={() => {
-                      if (logoSrc !== BRAND.fallbackLogo) setLogoSrc(BRAND.fallbackLogo);
-                    }}
+                    onError={() => { if (logoSrc !== BRAND.fallbackLogo) setLogoSrc(BRAND.fallbackLogo); }}
                   />
                 </div>
                 <div className="min-w-0">
                   <p className="font-black text-slate-900 flex items-center gap-2">
                     <Bot size={16} /> Unico IA
                   </p>
-                  <p className="text-xs font-semibold text-slate-500 truncate">
-                    {email || "—"}
-                  </p>
+                  <p className="text-xs font-semibold text-slate-500 truncate">{email || "—"}</p>
                 </div>
               </div>
 
@@ -225,10 +241,8 @@ export default function AiDock() {
             </div>
 
             <div className="p-4 border-b border-slate-100 bg-slate-50/70 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  Organización
-                </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Organización</span>
 
                 <div className="relative">
                   <select
@@ -238,15 +252,34 @@ export default function AiDock() {
                     disabled={loadingOrgs || !orgs.length}
                   >
                     {orgs.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.name}
-                      </option>
+                      <option key={o.id} value={o.id}>{o.name}</option>
                     ))}
                   </select>
-                  <ChevronDown
-                    className="absolute right-3 top-2.5 text-slate-400 pointer-events-none"
-                    size={16}
-                  />
+                  <ChevronDown className="absolute right-3 top-2.5 text-slate-400 pointer-events-none" size={16} />
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setView("chat")}
+                    className={clsx(
+                      "px-3 py-2 rounded-xl font-black text-xs border",
+                      view === "chat" ? "text-white border-transparent" : "bg-white text-slate-900 border-slate-200 hover:bg-slate-100"
+                    )}
+                    style={view === "chat" ? { background: BRAND.grad } : undefined}
+                  >
+                    <Sparkles size={14} className="inline mr-2" /> Chat
+                  </button>
+
+                  <button
+                    onClick={() => setView("activity")}
+                    className={clsx(
+                      "px-3 py-2 rounded-xl font-black text-xs border",
+                      view === "activity" ? "text-white border-transparent" : "bg-white text-slate-900 border-slate-200 hover:bg-slate-100"
+                    )}
+                    style={view === "activity" ? { background: BRAND.grad } : undefined}
+                  >
+                    <History size={14} className="inline mr-2" /> Actividad
+                  </button>
                 </div>
 
                 {loadingOrgs ? (
@@ -256,63 +289,122 @@ export default function AiDock() {
                 ) : null}
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                {quickActions.slice(0, 4).map((a) => (
+              {view === "chat" ? (
+                <div className="flex flex-wrap gap-2">
+                  {quickActions.slice(0, 4).map((a) => (
+                    <button
+                      key={a.label}
+                      onClick={() => send(a.prompt)}
+                      className="px-3 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 font-black text-xs text-slate-900"
+                      disabled={busy}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-3 text-slate-400" size={16} />
+                    <input
+                      value={auditQ}
+                      onChange={(e) => setAuditQ(e.target.value)}
+                      placeholder="Buscar acción/correo…"
+                      className="pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600 w-[240px]"
+                    />
+                  </div>
                   <button
-                    key={a.label}
-                    onClick={() => send(a.prompt)}
-                    className="px-3 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 font-black text-xs text-slate-900"
-                    disabled={busy}
+                    onClick={loadAudit}
+                    className="px-3 py-2.5 rounded-xl bg-slate-900 text-white font-black text-xs hover:opacity-90 flex items-center gap-2"
+                    disabled={auditBusy}
                   >
-                    {a.label}
+                    <RefreshCcw size={14} /> {auditBusy ? "Cargando…" : "Recargar"}
                   </button>
-                ))}
+                </div>
+              )}
+            </div>
+
+            {view === "chat" ? (
+              <>
+                <div className="p-5 h-[52vh] md:h-[56vh] overflow-y-auto space-y-3">
+                  {messages.map((m, idx) => (
+                    <div
+                      key={idx}
+                      className={clsx(
+                        "max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-relaxed font-semibold",
+                        m.role === "assistant"
+                          ? "bg-slate-50 border border-slate-200 text-slate-800"
+                          : "text-white ml-auto"
+                      )}
+                      style={m.role === "user" ? { background: BRAND.grad } : undefined}
+                    >
+                      {m.content}
+                    </div>
+                  ))}
+                  <div ref={bottomRef} />
+                </div>
+
+                <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+                  <input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send(input)}
+                    className="flex-1 bg-white border border-slate-200 text-slate-800 font-bold px-4 py-3 rounded-xl outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+                    placeholder="Escribe una instrucción…"
+                    disabled={busy}
+                  />
+                  <button
+                    onClick={() => send(input)}
+                    disabled={busy || !input.trim()}
+                    className="px-5 py-3 rounded-xl text-white font-black flex items-center gap-2 disabled:opacity-60"
+                    style={{ background: BRAND.grad }}
+                  >
+                    <Send size={16} />
+                    {busy ? "Enviando" : "Enviar"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="p-5 h-[60vh] overflow-y-auto">
+                <div className="text-xs font-semibold text-slate-500 mb-3">
+                  Solo owner/admin pueden ver actividad.
+                </div>
+
+                {auditBusy ? (
+                  <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700 font-bold">
+                    Cargando…
+                  </div>
+                ) : filteredAudit.length ? (
+                  <div className="space-y-2">
+                    {filteredAudit.slice(0, 120).map((r) => (
+                      <div key={r.id} className="p-4 rounded-2xl border border-slate-200 bg-white">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <div>
+                            <p className="font-black text-slate-900">{r.action}</p>
+                            <p className="text-xs font-semibold text-slate-500">
+                              {r.actor_email || "—"} •{" "}
+                              {r.created_at ? new Date(r.created_at).toLocaleString("es-MX") : "—"}
+                            </p>
+                          </div>
+                          {r.entity ? (
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 bg-slate-100 border border-slate-200 px-3 py-1 rounded-full">
+                              {r.entity}
+                            </span>
+                          ) : null}
+                        </div>
+                        {r.summary ? (
+                          <p className="mt-2 text-sm font-semibold text-slate-700">{r.summary}</p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700 font-bold">
+                    Sin registros (o falta audit_log / permisos).
+                  </div>
+                )}
               </div>
-            </div>
-
-            <div className="p-5 h-[52vh] md:h-[56vh] overflow-y-auto space-y-3">
-              {!canUse ? (
-                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100 text-amber-800 font-bold">
-                  Falta sesión u organización válida. Si acabas de entrar, espera 2-3s y reintenta.
-                </div>
-              ) : null}
-
-              {messages.map((m, idx) => (
-                <div
-                  key={idx}
-                  className={clsx(
-                    "max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-relaxed font-semibold",
-                    m.role === "assistant"
-                      ? "bg-slate-50 border border-slate-200 text-slate-800"
-                      : "text-white ml-auto"
-                  )}
-                  style={m.role === "user" ? { background: BRAND.grad } : undefined}
-                >
-                  {m.content}
-                </div>
-              ))}
-              <div ref={bottomRef} />
-            </div>
-
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send(input)}
-                className="flex-1 bg-white border border-slate-200 text-slate-800 font-bold px-4 py-3 rounded-xl outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
-                placeholder="Escribe una instrucción…"
-                disabled={busy}
-              />
-              <button
-                onClick={() => send(input)}
-                disabled={busy || !input.trim()}
-                className="px-5 py-3 rounded-xl text-white font-black flex items-center gap-2 disabled:opacity-60"
-                style={{ background: BRAND.grad }}
-              >
-                <Send size={16} />
-                {busy ? "Enviando" : "Enviar"}
-              </button>
-            </div>
+            )}
           </div>
         </div>
       )}
