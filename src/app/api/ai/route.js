@@ -3,7 +3,6 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { serverSupabase, requireUserFromToken } from "@/lib/serverSupabase";
-import { writeAudit } from "@/lib/auditServer";
 
 const json = (status, payload) => NextResponse.json(payload, { status });
 
@@ -35,18 +34,26 @@ function parsePixelId(input) {
 }
 
 async function getRole(sb, orgId, email) {
-  const { data } = await sb
+  const { data, error } = await sb
     .from("admin_users")
     .select("role,is_active")
     .eq("organization_id", orgId)
     .ilike("email", email)
     .eq("is_active", true)
     .maybeSingle();
-  return { role: String(data?.role || "").toLowerCase(), exists: !!data };
+
+  if (error) return { exists: false, role: "viewer", error: error.message };
+  return { exists: !!data, role: String(data?.role || "viewer").toLowerCase(), error: null };
 }
 
 function canMarketing(role) {
-  return ["owner", "admin", "marketing"].includes(role);
+  return ["owner", "admin", "marketing"].includes(String(role || "").toLowerCase());
+}
+
+function canRead(role) {
+  return ["owner", "admin", "ops", "sales", "marketing", "viewer", "staff"].includes(
+    String(role || "").toLowerCase()
+  );
 }
 
 async function actionPromo(sb, orgId, on, textMaybe) {
@@ -56,9 +63,11 @@ async function actionPromo(sb, orgId, on, textMaybe) {
     promo_text: on ? (String(textMaybe || "").trim() || "PROMO ACTIVA") : null,
     updated_at: new Date().toISOString(),
   };
+
   const { error } = await sb.from("site_settings").upsert(payload, { onConflict: "organization_id" });
   if (error) throw new Error(error.message);
-  return payload;
+
+  return on ? `Listo. Promo activada: "${payload.promo_text}".` : "Listo. Promo apagada.";
 }
 
 async function actionPixel(sb, orgId, pixelId) {
@@ -67,9 +76,98 @@ async function actionPixel(sb, orgId, pixelId) {
     pixel_id: String(pixelId || "").trim() || null,
     updated_at: new Date().toISOString(),
   };
+
   const { error } = await sb.from("site_settings").upsert(payload, { onConflict: "organization_id" });
   if (error) throw new Error(error.message);
-  return payload;
+
+  return payload.pixel_id ? `Listo. Pixel configurado: ${payload.pixel_id}.` : "Listo. Pixel removido.";
+}
+
+async function actionSalesSummary(sb, orgId) {
+  const now = new Date();
+  const since = new Date(now.getTime() - 30 * 864e5).toISOString();
+
+  const { data, error } = await sb
+    .from("orders")
+    .select("amount_total_mxn, created_at, status")
+    .eq("organization_id", orgId)
+    .eq("status", "paid")
+    .gte("created_at", since)
+    .limit(2000);
+
+  if (error) throw new Error(error.message);
+
+  const orders = data || [];
+  const gross = orders.reduce((a, o) => a + Number(o.amount_total_mxn || 0), 0);
+  const count = orders.length;
+  const avg = count ? gross / count : 0;
+
+  return `Resumen últimos 30 días:\n• Ventas brutas: ${gross.toLocaleString("es-MX", {
+    style: "currency",
+    currency: "MXN",
+  })}\n• Pedidos pagados: ${count}\n• Ticket promedio: ${avg.toLocaleString("es-MX", {
+    style: "currency",
+    currency: "MXN",
+  })}`;
+}
+
+async function actionTopCustomers(sb, orgId) {
+  const { data, error } = await sb
+    .from("orders")
+    .select("email, customer_name, amount_total_mxn, status")
+    .eq("organization_id", orgId)
+    .eq("status", "paid")
+    .limit(5000);
+
+  if (error) throw new Error(error.message);
+
+  const map = new Map();
+  for (const o of data || []) {
+    const email = String(o.email || "").trim().toLowerCase();
+    if (!email) continue;
+    const prev = map.get(email) || { email, name: o.customer_name || email, ltv: 0, orders: 0 };
+    prev.ltv += Number(o.amount_total_mxn || 0);
+    prev.orders += 1;
+    map.set(email, prev);
+  }
+
+  const top = Array.from(map.values()).sort((a, b) => b.ltv - a.ltv).slice(0, 5);
+  if (!top.length) return "Aún no hay clientes con compras pagadas.";
+
+  const lines = top.map(
+    (c, i) =>
+      `${i + 1}) ${c.name} — ${c.orders} pedidos — ${c.ltv.toLocaleString("es-MX", {
+        style: "currency",
+        currency: "MXN",
+      })}`
+  );
+
+  return `Top clientes (LTV):\n${lines.join("\n")}`;
+}
+
+async function actionPendingShipments(sb, orgId) {
+  const { data, error } = await sb
+    .from("shipping_labels")
+    .select("tracking_number, status, updated_at, carrier")
+    .eq("org_id", orgId)
+    .order("updated_at", { ascending: false })
+    .limit(40);
+
+  if (error) throw new Error(error.message);
+
+  const rows = (data || []).filter((r) => {
+    const st = String(r.status || "").toLowerCase();
+    return st && !["delivered", "entregado", "cancelled", "cancelado"].includes(st);
+  });
+
+  if (!rows.length) return "No veo envíos pendientes en los últimos registros.";
+
+  const lines = rows.slice(0, 10).map((r, i) => {
+    const st = String(r.status || "—").toUpperCase();
+    return `${i + 1}) ${r.tracking_number || "—"} • ${st} • ${r.carrier || "—"}`;
+  });
+
+  return `Envíos pendientes (últimos):\n${lines.join("\n")}`;
 }
 
 async function geminiReply(message, context) {
@@ -77,24 +175,29 @@ async function geminiReply(message, context) {
   if (!key) return "IA no disponible: falta GEMINI_API_KEY en el servidor.";
 
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+    model
+  )}:generateContent?key=${encodeURIComponent(key)}`;
 
-  const sys = `Eres Unico IA para UnicOs Admin (Score Store).
-Responde en español claro, directo y accionable.
-Nunca inventes datos; si no puedes leerlos desde DB, dilo y pide el dato mínimo.
-Comandos:
-- Activa promo: "TEXTO"
-- Apaga promo
-- Configura pixel: 123...
-- Resumen ventas
-- Top clientes
-- Envíos pendientes`;
+  const sys = `Eres Unico IA, asistente ejecutivo para UnicOs Admin (Score Store).
+Responde en español, claro, directo y sin tecnicismos.
+Nunca inventes datos: si no están en DB, dilo.
+Acciones disponibles:
+- "Activa promo: \\"TEXTO\\""
+- "Apaga promo"
+- "Configura pixel: 123456789012345"
+- "Resumen ventas"
+- "Top clientes"
+- "Envíos pendientes"`;
 
   const payload = {
     contents: [
-      { role: "user", parts: [{ text: `${sys}\n\nContexto:\n${context}\n\nUsuario:\n${message}` }] },
+      {
+        role: "user",
+        parts: [{ text: `${sys}\n\nContexto:\n${context}\n\nUsuario:\n${message}` }],
+      },
     ],
-    generationConfig: { temperature: 0.3, maxOutputTokens: 500 },
+    generationConfig: { temperature: 0.3, maxOutputTokens: 520 },
   };
 
   const res = await fetch(url, {
@@ -109,8 +212,7 @@ Comandos:
     return `IA error: ${msg}`;
   }
 
-  const text =
-    j?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "OK.";
+  const text = j?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "OK.";
   return String(text).trim();
 }
 
@@ -123,87 +225,56 @@ export async function POST(req) {
     if (authErr) return json(401, { ok: false, error: "No autorizado" });
 
     const body = await req.json().catch(() => ({}));
-    const message = cleanMsg(body?.message);
-    const orgId = String(body?.organization_id || "").trim();
+    const message = cleanMsg(body?.message || body?.prompt || body?.text);
+    const orgId = String(body?.organization_id || body?.org_id || body?.orgId || "").trim();
 
     if (!message) return json(400, { ok: false, error: "message requerido." });
     if (!isUuid(orgId)) return json(400, { ok: false, error: "organization_id inválido." });
 
     const email = normEmail(user?.email);
-    const { role, exists } = await getRole(sb, orgId, email);
-    if (!exists) return json(403, { ok: false, error: "Acceso denegado." });
+    const { role, exists, error } = await getRole(sb, orgId, email);
+    if (error) return json(500, { ok: false, error });
+    if (!exists || !canRead(role)) return json(403, { ok: false, error: "Acceso denegado." });
 
     const m = message.toLowerCase();
 
-    // === ACTION ROUTER (real ops) ===
     if (m.includes("activa promo") || m.includes("activar promo")) {
       if (!canMarketing(role)) return json(200, { ok: true, reply: "No tengo permisos para cambiar marketing." });
-
       const text = parseQuotedText(message) || message.split(":").slice(1).join(":").trim();
-      const after = await actionPromo(sb, orgId, true, text);
-
-      await writeAudit(sb, {
-        organization_id: orgId,
-        actor_email: email,
-        actor_user_id: user?.id || null,
-        action: "site_settings.promo_on",
-        entity: "site_settings",
-        entity_id: orgId,
-        summary: `Promo ON: ${after.promo_text || ""}`.slice(0, 180),
-        after,
-        meta: { role },
-        ip: req.headers.get("x-forwarded-for") || null,
-        user_agent: req.headers.get("user-agent") || null,
-      });
-
-      return json(200, { ok: true, reply: `Listo. Promo activada: "${after.promo_text}".` });
+      const reply = await actionPromo(sb, orgId, true, text);
+      return json(200, { ok: true, reply });
     }
 
     if (m.includes("apaga promo") || m.includes("desactiva promo")) {
       if (!canMarketing(role)) return json(200, { ok: true, reply: "No tengo permisos para cambiar marketing." });
-
-      const after = await actionPromo(sb, orgId, false, "");
-
-      await writeAudit(sb, {
-        organization_id: orgId,
-        actor_email: email,
-        actor_user_id: user?.id || null,
-        action: "site_settings.promo_off",
-        entity: "site_settings",
-        entity_id: orgId,
-        summary: "Promo OFF",
-        after,
-        meta: { role },
-      });
-
-      return json(200, { ok: true, reply: "Listo. Promo apagada." });
+      const reply = await actionPromo(sb, orgId, false, "");
+      return json(200, { ok: true, reply });
     }
 
     if (m.includes("configura pixel") || m.includes("configurar pixel") || m.includes("pixel")) {
       if (!canMarketing(role)) return json(200, { ok: true, reply: "No tengo permisos para cambiar el Pixel." });
-
       const pid = parsePixelId(message);
       if (!pid) return json(200, { ok: true, reply: "Pásame el Pixel ID (solo números) para configurarlo." });
-
-      const after = await actionPixel(sb, orgId, pid);
-
-      await writeAudit(sb, {
-        organization_id: orgId,
-        actor_email: email,
-        actor_user_id: user?.id || null,
-        action: "site_settings.pixel_set",
-        entity: "site_settings",
-        entity_id: orgId,
-        summary: `Pixel set: ${pid}`,
-        after,
-        meta: { role },
-      });
-
-      return json(200, { ok: true, reply: `Listo. Pixel configurado: ${pid}.` });
+      const reply = await actionPixel(sb, orgId, pid);
+      return json(200, { ok: true, reply });
     }
 
-    // fallback Gemini
-    const context = `Rol: ${role}\nOrg: ${orgId}\n`;
+    if (m.includes("resumen ventas") || (m.includes("ventas") && m.includes("resumen"))) {
+      const reply = await actionSalesSummary(sb, orgId);
+      return json(200, { ok: true, reply });
+    }
+
+    if (m.includes("top clientes") || (m.includes("clientes") && m.includes("top"))) {
+      const reply = await actionTopCustomers(sb, orgId);
+      return json(200, { ok: true, reply });
+    }
+
+    if (m.includes("envíos pendientes") || m.includes("envios pendientes") || (m.includes("env") && m.includes("pend"))) {
+      const reply = await actionPendingShipments(sb, orgId);
+      return json(200, { ok: true, reply });
+    }
+
+    const context = `Rol: ${role}\nOrg: ${orgId}\nUsuario: ${email}\n`;
     const reply = await geminiReply(message, context);
     return json(200, { ok: true, reply });
   } catch (e) {
