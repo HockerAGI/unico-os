@@ -352,17 +352,32 @@ function Shell({ session }) {
 
   // Global Search (orders + products)
   const [globalQuery, setGlobalQuery] = useState("");
-  const [globalOpen, setGlobalOpen] = useState(false);
   const [globalResults, setGlobalResults] = useState({ orders: [], products: [] });
+
+  // Command Palette
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const paletteInputRef = useRef(null);
 
   const canInvite = canManageUsers(role);
   const canWrite = ["owner", "admin", "ops"].includes(String(role || "").toLowerCase());
+
+  const openAi = useCallback(() => {
+    // AiDock tiene FAB con clase .ai-fab
+    try {
+      const btn = document.querySelector(".ai-fab");
+      btn?.click?.();
+    } catch {}
+  }, []);
+
+  const forceRefresh = useCallback(() => {
+    toastShow({ type: "info", text: "Actualizando…" });
+    try { window.location.reload(); } catch {}
+  }, [toastShow]);
 
   useEffect(() => {
     async function init() {
       setLoading(true);
       try {
-        // memberships by email
         const { data: mems, error: memErr } = await supabase
           .from("admin_users")
           .select("organization_id, role, is_active")
@@ -371,9 +386,7 @@ function Shell({ session }) {
 
         if (memErr) throw memErr;
 
-        const orgIds = Array.from(
-          new Set((mems || []).map((m) => m.organization_id).filter(Boolean))
-        );
+        const orgIds = Array.from(new Set((mems || []).map((m) => m.organization_id).filter(Boolean)));
 
         if (!orgIds.length) {
           setOrgs([]);
@@ -390,17 +403,16 @@ function Shell({ session }) {
 
         if (orgErr) throw orgErr;
 
-        setOrgs(orgData || []);
+        const list = orgData || [];
+        setOrgs(list);
 
-        // pick preferred (score if exists)
-        const preferScore = (orgData || []).find((o) =>
+        const preferScore = list.find((o) =>
           String(o.slug || o.name || "").toLowerCase().includes("score")
         );
-        const pick = preferScore?.id || orgData?.[0]?.id;
+        const pick = preferScore?.id || list?.[0]?.id;
 
         setSelectedOrgId(pick || null);
 
-        // role for selected org
         const my = (mems || []).find((m) => String(m.organization_id) === String(pick));
         setRole(String(my?.role || "viewer").toLowerCase());
       } catch (e) {
@@ -416,7 +428,6 @@ function Shell({ session }) {
   }, [userEmail]);
 
   useEffect(() => {
-    // update role when org changes
     (async () => {
       if (!selectedOrgId) return;
       const { data } = await supabase
@@ -431,7 +442,6 @@ function Shell({ session }) {
     })();
   }, [selectedOrgId, userEmail]);
 
-  // Global search debounce
   useEffect(() => {
     let alive = true;
     const q = globalQuery.trim();
@@ -460,10 +470,7 @@ function Shell({ session }) {
         ]);
 
         if (!alive) return;
-        setGlobalResults({
-          orders: oRes?.data || [],
-          products: pRes?.data || [],
-        });
+        setGlobalResults({ orders: oRes?.data || [], products: pRes?.data || [] });
       } catch {
         if (!alive) return;
         setGlobalResults({ orders: [], products: [] });
@@ -476,22 +483,36 @@ function Shell({ session }) {
     };
   }, [globalQuery, selectedOrgId]);
 
+  useEffect(() => {
+    const onKey = (e) => {
+      const k = String(e.key || "").toLowerCase();
+
+      if ((e.ctrlKey || e.metaKey) && k === "k") {
+        e.preventDefault();
+        setPaletteOpen(true);
+        setTimeout(() => paletteInputRef.current?.focus?.(), 0);
+        return;
+      }
+
+      if (paletteOpen) {
+        if (k === "i") openAi();
+        if (k === "r") forceRefresh();
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [paletteOpen, openAi, forceRefresh]);
+
   const signOut = () => supabase.auth.signOut();
 
   if (loading) return <BootScreen />;
 
+  // ⬇️ esto corrige tu pantalla de “organización no encontrada”
   if (!selectedOrgId) {
-    return (
-      <EmptyState
-        title="Acceso restringido"
-        desc="Tu cuenta existe, pero no está vinculada a ninguna organización con acceso admin."
-        actionLabel="Salir"
-        onAction={() => supabase.auth.signOut()}
-      />
-    );
+    return <BootstrapGate token={token} onSignOut={signOut} />;
   }
 
-  // Modules aligned to current RBAC in src/lib/authz.js
   const ALL_TABS = [
     { id: "dashboard", label: "Finanzas", icon: <LayoutDashboard size={20} /> },
     { id: "orders", label: "Pedidos", icon: <ShoppingCart size={20} /> },
@@ -502,8 +523,7 @@ function Shell({ session }) {
     { id: "settings", label: "Integraciones", icon: <Settings size={20} /> },
   ].filter((t) => hasPerm(role, t.id));
 
-  const activeLabel =
-    ALL_TABS.find((t) => t.id === activeTab)?.label || "Panel";
+  const activeLabel = ALL_TABS.find((t) => t.id === activeTab)?.label || "Panel";
 
   return (
     <div
@@ -513,7 +533,6 @@ function Shell({ session }) {
           "linear-gradient(180deg, rgba(14,165,233,0.06), rgba(20,184,166,0.04) 35%, rgba(248,250,252,1) 100%)",
       }}
     >
-      {/* Mobile overlay */}
       {mobileMenuOpen ? (
         <div
           className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 md:hidden"
@@ -521,7 +540,6 @@ function Shell({ session }) {
         />
       ) : null}
 
-      {/* Sidebar */}
       <aside
         className={clsx(
           "fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 md:translate-x-0 md:static",
@@ -543,7 +561,6 @@ function Shell({ session }) {
           </div>
         </div>
 
-        {/* Org picker */}
         <div className="p-4 border-b border-slate-200">
           <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mb-2 block">
             Organización activa
@@ -571,7 +588,6 @@ function Shell({ session }) {
           </div>
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {ALL_TABS.map((tab) => (
             <button
@@ -586,9 +602,7 @@ function Shell({ session }) {
                   ? "text-white shadow-lg"
                   : "hover:bg-slate-100 text-slate-700"
               )}
-              style={
-                activeTab === tab.id ? { background: BRAND.grad } : undefined
-              }
+              style={activeTab === tab.id ? { background: BRAND.grad } : undefined}
             >
               <span className={activeTab === tab.id ? "text-white" : "text-slate-400"}>
                 {tab.icon}
@@ -608,7 +622,6 @@ function Shell({ session }) {
         </div>
       </aside>
 
-      {/* Main */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
         <header className="z-20 px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 bg-white/80 backdrop-blur-md border-b border-slate-200">
           <div className="flex items-center gap-4 min-w-0">
@@ -624,116 +637,35 @@ function Shell({ session }) {
               <h2 className="text-xl font-black text-slate-900 tracking-tight truncate">
                 {activeLabel}
               </h2>
-              <p className="text-xs font-semibold text-slate-500 truncate">
-                {userEmail}
-              </p>
+              <p className="text-xs font-semibold text-slate-500 truncate">{userEmail}</p>
             </div>
           </div>
 
-          {/* Global search */}
-          <div className="relative hidden md:block w-[440px] max-w-[44vw]">
+          <div className="relative hidden md:block w-[460px] max-w-[46vw]">
             <Search className="absolute left-3 top-3 text-slate-400" size={18} />
             <input
+              ref={paletteInputRef}
               value={globalQuery}
-              onChange={(e) => {
-                setGlobalQuery(e.target.value);
-                setGlobalOpen(true);
-              }}
-              onFocus={() => setGlobalOpen(true)}
-              placeholder="Buscar pedido, cliente o producto…"
+              onChange={(e) => setGlobalQuery(e.target.value)}
+              onFocus={() => setPaletteOpen(true)}
+              placeholder="Buscar… (Ctrl/⌘ + K)"
               className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
             />
-
-            {globalOpen && globalQuery.trim().length >= 2 ? (
-              <div className="absolute top-12 left-0 right-0 bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden z-50">
-                <div className="p-3 border-b border-slate-100 flex items-center justify-between">
-                  <p className="text-xs font-black uppercase tracking-widest text-slate-500">
-                    Resultados
-                  </p>
-                  <button
-                    onClick={() => setGlobalOpen(false)}
-                    className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200"
-                    aria-label="Cerrar resultados"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-
-                <div className="p-3">
-                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">
-                    Pedidos
-                  </p>
-                  {globalResults.orders.length ? (
-                    <div className="space-y-1">
-                      {globalResults.orders.map((o) => (
-                        <button
-                          key={o.id}
-                          className="w-full text-left p-3 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200"
-                          onClick={() => {
-                            setActiveTab("orders");
-                            setGlobalOpen(false);
-                            toastShow({ type: "info", text: "Abriendo pedidos…" });
-                          }}
-                        >
-                          <div className="flex items-center justify-between">
-                            <p className="font-black text-slate-900">
-                              #{String(o.id).split("-")[0].toUpperCase()}{" "}
-                              <span className="text-slate-500 font-semibold">
-                                • {moneyMXN(o.amount_total_mxn)}
-                              </span>
-                            </p>
-                            <span className="text-xs font-black text-slate-600">
-                              {String(o.status || "").toUpperCase()}
-                            </span>
-                          </div>
-                          <p className="text-xs font-semibold text-slate-500">
-                            {o.customer_name || o.email || "—"}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm font-semibold text-slate-500">
-                      Sin coincidencias.
-                    </p>
-                  )}
-
-                  <div className="mt-4">
-                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">
-                      Productos
-                    </p>
-                    {globalResults.products.length ? (
-                      <div className="space-y-1">
-                        {globalResults.products.map((p) => (
-                          <button
-                            key={p.id}
-                            className="w-full text-left p-3 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200"
-                            onClick={() => {
-                              setActiveTab("products");
-                              setGlobalOpen(false);
-                              toastShow({ type: "info", text: "Abriendo productos…" });
-                            }}
-                          >
-                            <p className="font-black text-slate-900">{p.name}</p>
-                            <p className="text-xs font-semibold text-slate-500">
-                              SKU: {p.sku || "—"} • {moneyMXN(p.price_mxn)} • Stock:{" "}
-                              {num(p.stock)}
-                            </p>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm font-semibold text-slate-500">
-                        Sin coincidencias.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : null}
           </div>
 
           <div className="flex items-center gap-2 md:gap-3">
+            <button
+              onClick={() => {
+                setPaletteOpen(true);
+                setTimeout(() => paletteInputRef.current?.focus?.(), 0);
+              }}
+              className="md:hidden p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"
+              aria-label="Buscar"
+              title="Buscar"
+            >
+              <Search size={18} />
+            </button>
+
             <button
               className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"
               aria-label="Notificaciones"
@@ -743,7 +675,7 @@ function Shell({ session }) {
             </button>
 
             <button
-              onClick={() => toastShow({ type: "info", text: "IA: en el siguiente bloque te la dejo embebida pro." })}
+              onClick={openAi}
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-white font-black text-xs shadow-sm"
               style={{ background: BRAND.grad }}
               title="Unico IA"
@@ -760,12 +692,7 @@ function Shell({ session }) {
             )}
 
             {activeTab === "orders" && (
-              <OrdersAndShippingView
-                orgId={selectedOrgId}
-                token={token}
-                canWrite={canWrite}
-                toast={toastShow}
-              />
+              <OrdersAndShippingView orgId={selectedOrgId} token={token} canWrite={canWrite} toast={toastShow} />
             )}
 
             {activeTab === "products" && (
@@ -779,13 +706,7 @@ function Shell({ session }) {
             )}
 
             {activeTab === "users" && (
-              <UsersView
-                orgId={selectedOrgId}
-                token={token}
-                role={role}
-                canInvite={canInvite}
-                toast={toastShow}
-              />
+              <UsersView orgId={selectedOrgId} token={token} role={role} canInvite={canInvite} toast={toastShow} />
             )}
 
             {activeTab === "settings" && (
@@ -795,12 +716,28 @@ function Shell({ session }) {
         </div>
 
         {toast ? <Toast t={toast} /> : null}
+
+        <CommandPalette
+          open={paletteOpen}
+          onClose={() => setPaletteOpen(false)}
+          query={globalQuery}
+          setQuery={setGlobalQuery}
+          inputRef={paletteInputRef}
+          tabs={ALL_TABS}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          results={globalResults}
+          canInvite={canInvite}
+          onOpenAi={openAi}
+          onRefresh={forceRefresh}
+        />
+
+        {/* IA + Activity (floating) */}
+        <AiDock />
       </main>
     </div>
   );
-}
-
-/* =========================================================
+} =========================================================
    DASHBOARD (Stripe + Envía + Score 70%)
    ========================================================= */
 function DashboardView({ orgId, token, toast }) {
