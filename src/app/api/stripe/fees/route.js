@@ -12,21 +12,14 @@ function getBearerToken(req) {
   return m ? m[1] : "";
 }
 
-const normEmail = (s) => String(s || "").trim().toLowerCase();
-
 const isUuid = (s) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     String(s || "").trim()
   );
 
-const toMajor = (minor) => Number(minor || 0) / 100;
+const normEmail = (s) => String(s || "").trim().toLowerCase();
 
-function fxUsdToMxn() {
-  const fx = Number(process.env.FX_USD_TO_MXN || process.env.USD_TO_MXN || NaN);
-  return Number.isFinite(fx) && fx > 0 ? fx : null;
-}
-
-function clampList(arr, max = 120) {
+const clampList = (arr, max = 60) => {
   const out = [];
   for (const v of Array.isArray(arr) ? arr : []) {
     const s = String(v || "").trim();
@@ -35,56 +28,95 @@ function clampList(arr, max = 120) {
     if (out.length >= max) break;
   }
   return out;
+};
+
+function centsToFloat(n) {
+  const v = Number(n || 0);
+  if (!Number.isFinite(v)) return 0;
+  return v / 100;
 }
 
-async function fetchStripeSession(sessionId, stripeKey) {
-  const url = new URL(`https://api.stripe.com/v1/checkout/sessions/${sessionId}`);
-  url.searchParams.append("expand[]", "payment_intent.latest_charge.balance_transaction");
+function fxUsdToMxn() {
+  const v = Number(process.env.FX_USD_TO_MXN || 0);
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
 
-  const res = await fetch(url.toString(), {
-    method: "GET",
-    headers: { Authorization: `Bearer ${stripeKey}` },
+async function stripeFetch(path) {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("Falta STRIPE_SECRET_KEY en el servidor.");
+
+  const res = await fetch(`https://api.stripe.com${path}`, {
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Stripe-Version": "2023-10-16",
+    },
+    cache: "no-store",
   });
 
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.error?.message || `Stripe error (${res.status})`);
-  return data;
+  const j = await res.json().catch(() => null);
+  if (!res.ok) {
+    const msg = j?.error?.message || `Stripe error (${res.status})`;
+    throw new Error(msg);
+  }
+  return j;
 }
 
-function extractFee(session) {
-  const bt = session?.payment_intent?.latest_charge?.balance_transaction;
-  const feeMinor = Number(bt?.fee || 0);
-  const currency = String(bt?.currency || session?.currency || "mxn").toLowerCase();
-  return { feeMinor, currency };
+async function getFeeFromSession(sessionId) {
+  const sid = encodeURIComponent(sessionId);
+
+  const q = new URLSearchParams();
+  q.append("expand[]", "payment_intent");
+  q.append("expand[]", "payment_intent.latest_charge.balance_transaction");
+
+  const s = await stripeFetch(`/v1/checkout/sessions/${sid}?${q.toString()}`);
+
+  const bt =
+    s?.payment_intent?.latest_charge?.balance_transaction ||
+    s?.payment_intent?.charges?.data?.[0]?.balance_transaction ||
+    null;
+
+  if (!bt || typeof bt === "string") return { fee: 0, currency: null };
+
+  const fee = centsToFloat(bt.fee);
+  const currency = String(bt.currency || "").toLowerCase() || null;
+
+  return { fee, currency };
+}
+
+async function mapLimit(items, limit, fn) {
+  const results = [];
+  let idx = 0;
+
+  const workers = new Array(Math.max(1, limit)).fill(null).map(async () => {
+    while (idx < items.length) {
+      const i = idx++;
+      try {
+        results[i] = await fn(items[i]);
+      } catch (e) {
+        results[i] = { fee: 0, currency: null, error: String(e?.message || e) };
+      }
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
 }
 
 export async function POST(req) {
   try {
-    const stripeKey =
-      process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY || process.env.STRIPE_SK;
-
-    if (!stripeKey) {
-      return json(200, {
-        ok: false,
-        mode: "estimate",
-        error: "STRIPE_SECRET_KEY no configurado en el servidor.",
-      });
-    }
-
     const sb = serverSupabase();
     const token = getBearerToken(req);
+
     const { user, error: authErr } = await requireUserFromToken(sb, token);
     if (authErr) return json(401, { ok: false, error: "No autorizado" });
 
     const body = await req.json().catch(() => ({}));
-    const orgId = String(body?.org_id || "").trim();
-    const sessionIds = clampList(body?.stripe_session_ids, 120);
+    const orgId = String(body?.org_id || body?.organization_id || "").trim();
+    const sessionIds = clampList(body?.stripe_session_ids || body?.sessions || [], 60);
 
-    if (!isUuid(orgId) || sessionIds.length === 0) {
-      return json(400, { ok: false, error: "org_id (uuid) y stripe_session_ids requeridos." });
-    }
+    if (!isUuid(orgId)) return json(400, { ok: false, error: "org_id inválido" });
+    if (!sessionIds.length) return json(400, { ok: false, error: "stripe_session_ids requerido" });
 
-    // Membership check (cualquier rol activo puede ver métricas)
     const email = normEmail(user?.email);
     const { data: mem, error: memErr } = await sb
       .from("admin_users")
@@ -95,59 +127,31 @@ export async function POST(req) {
       .maybeSingle();
 
     if (memErr) return json(500, { ok: false, error: memErr.message });
-    if (!mem) return json(403, { ok: false, error: "Acceso denegado." });
 
-    // Concurrency control
-    const limit = 6;
-    let idx = 0;
-    const results = [];
-
-    const worker = async () => {
-      while (idx < sessionIds.length) {
-        const sid = sessionIds[idx++];
-        try {
-          const session = await fetchStripeSession(sid, stripeKey);
-          results.push({ sid, session });
-        } catch (e) {
-          results.push({ sid, error: String(e?.message || e) });
-        }
-      }
-    };
-
-    await Promise.all(Array.from({ length: Math.min(limit, sessionIds.length) }, worker));
-
-    let totalFeeMxn = 0;
-    let feeUsdMinor = 0;
-    let missing = 0;
-
-    for (const r of results) {
-      if (!r?.session) {
-        missing += 1;
-        continue;
-      }
-      const { feeMinor, currency } = extractFee(r.session);
-      if (!feeMinor) {
-        missing += 1;
-        continue;
-      }
-
-      if (currency === "mxn") totalFeeMxn += toMajor(feeMinor);
-      else if (currency === "usd") feeUsdMinor += feeMinor;
-      else missing += 1;
+    const role = String(mem?.role || "").toLowerCase();
+    if (!mem || !["owner", "admin", "ops"].includes(role)) {
+      return json(403, { ok: false, error: "Permisos insuficientes" });
     }
 
     const fx = fxUsdToMxn();
-    const converted = Boolean(fx && feeUsdMinor);
-    if (converted) totalFeeMxn += toMajor(feeUsdMinor) * fx;
+    const rows = await mapLimit(sessionIds, 5, getFeeFromSession);
+
+    let mxn = 0;
+    const byCurrency = {};
+
+    for (const r of rows) {
+      const c = r?.currency || "unknown";
+      byCurrency[c] = (byCurrency[c] || 0) + Number(r?.fee || 0);
+
+      if (c === "mxn") mxn += Number(r.fee || 0);
+      else if (c === "usd" && fx) mxn += Number(r.fee || 0) * fx;
+    }
 
     return json(200, {
       ok: true,
-      mode: "stripe",
-      total_fee_mxn: Number(totalFeeMxn.toFixed(2)),
-      processed: sessionIds.length,
-      missing,
-      converted_usd: converted,
-      fx_usd_to_mxn: fx || null,
+      total_fee_mxn: Number(mxn.toFixed(2)),
+      detail: byCurrency,
+      fx_usd_to_mxn: fx,
     });
   } catch (e) {
     return json(500, { ok: false, error: String(e?.message || e) });
