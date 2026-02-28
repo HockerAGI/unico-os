@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { serverSupabase, requireUserFromToken } from "@/lib/serverSupabase";
+import { writeAudit } from "@/lib/auditServer";
 
 const json = (status, payload) => NextResponse.json(payload, { status });
 
@@ -53,7 +54,6 @@ export async function POST(req) {
       return json(403, { ok: false, error: "Permisos insuficientes." });
     }
 
-    // Upsert admin_users (no secrets)
     const payload = {
       organization_id: orgId,
       email,
@@ -62,11 +62,21 @@ export async function POST(req) {
       updated_at: new Date().toISOString(),
     };
 
-    const { error } = await sb
-      .from("admin_users")
-      .upsert(payload, { onConflict: "organization_id,email" });
-
+    const { error } = await sb.from("admin_users").upsert(payload, { onConflict: "organization_id,email" });
     if (error) return json(400, { ok: false, error: error.message });
+
+    await writeAudit(sb, {
+      organization_id: orgId,
+      actor_email: myEmail,
+      actor_user_id: user?.id || null,
+      action: "admin_users.invite",
+      entity: "admin_users",
+      entity_id: email,
+      summary: `Invited ${email} as ${role}`,
+      meta: { role_assigned: role },
+      ip: req.headers.get("x-forwarded-for") || null,
+      user_agent: req.headers.get("user-agent") || null,
+    });
 
     return json(200, { ok: true, invited: { email, role } });
   } catch (e) {
