@@ -1,19 +1,17 @@
 // src/app/page.js
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import clsx from "clsx";
 import { supabase } from "@/lib/supabase";
-import { hasPerm, canManageUsers, canRefund } from "@/lib/authz";
+import { hasPerm, canManageUsers } from "@/lib/authz";
 import {
   LayoutDashboard,
   ShoppingCart,
-  Truck,
   Package,
-  Users,
   Megaphone,
-  Shield,
+  Users,
   Settings,
   LogOut,
   ChevronDown,
@@ -29,19 +27,35 @@ import {
   ExternalLink,
   Copy,
   X,
-  Bot,
-  Send,
   Download,
-  BadgeDollarSign,
+  Truck,
+  Boxes,
+  Shield,
 } from "lucide-react";
 
-const BRAND_ICON = "/icon-512.png"; // usa tu icono/logo oficial (reemplaza este PNG por tu logo si quieres)
+/* =========================================================
+   BRAND (UnicOs)
+   ========================================================= */
+const BRAND = {
+  name: "UnicOs",
+  // 1) tu branding real (ponlo en /public/logo-unico.png)
+  primaryLogo: "/logo-unico.png",
+  // 2) fallback a icono que YA está en repo
+  fallbackLogo: "/icon-512.png",
+  grad: "linear-gradient(135deg, #0EA5E9, #14B8A6)",
+};
 
 const moneyMXN = (v) =>
   Number(v || 0).toLocaleString("es-MX", { style: "currency", currency: "MXN" });
 
 const num = (v) => Number(v || 0).toLocaleString("es-MX");
+
 const normEmail = (s) => String(s || "").trim().toLowerCase();
+
+const isUuid = (s) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    String(s || "").trim()
+  );
 
 function stripeDashboardUrl(sessionId) {
   const id = String(sessionId || "");
@@ -50,6 +64,18 @@ function stripeDashboardUrl(sessionId) {
   return isTest
     ? `https://dashboard.stripe.com/test/checkout/sessions/${encodeURIComponent(id)}`
     : `https://dashboard.stripe.com/checkout/sessions/${encodeURIComponent(id)}`;
+}
+
+function estimateStripeFeeMXN(orders) {
+  // fallback si /api/stripe/fees no está o Stripe no está configurado:
+  // 3.6% + $3 por transacción (aprox)
+  let fee = 0;
+  for (const o of orders || []) {
+    const total = Number(o?.amount_total_mxn || 0);
+    if (!total) continue;
+    fee += total * 0.036 + 3;
+  }
+  return fee;
 }
 
 function extractEnviaCost(raw) {
@@ -83,39 +109,124 @@ function extractEnviaCost(raw) {
   }
 }
 
-function estimateStripeFeeMXN(orders) {
-  // fallback si Stripe key no está configurada: 3.6% + $3 (estimación)
-  let fee = 0;
-  for (const o of orders || []) {
-    const total = Number(o?.amount_total_mxn || 0);
-    if (!total) continue;
-    fee += total * 0.036 + 3;
+function clampList(arr, max = 160) {
+  const out = [];
+  for (const v of Array.isArray(arr) ? arr : []) {
+    const s = String(v || "").trim();
+    if (!s) continue;
+    out.push(s);
+    if (out.length >= max) break;
   }
-  return fee;
+  return out;
 }
 
 /* =========================================================
-   ENTRY
+   TOAST
+   ========================================================= */
+function useToast() {
+  const [toast, setToast] = useState(null);
+  const timer = useRef(null);
+
+  const show = useCallback((t) => {
+    setToast(t);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setToast(null), 2400);
+  }, []);
+
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return { toast, show, clear: () => setToast(null) };
+}
+
+function Toast({ t }) {
+  const tone =
+    t?.type === "success"
+      ? "bg-emerald-600"
+      : t?.type === "error"
+      ? "bg-rose-600"
+      : "bg-slate-900";
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[90]">
+      <div className={clsx("px-5 py-3 rounded-2xl text-white font-black shadow-2xl", tone)}>
+        {t?.text || ""}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   BRAND MARK
+   ========================================================= */
+function BrandMark({ size = 42 }) {
+  const [src, setSrc] = useState(BRAND.primaryLogo);
+
+  return (
+    <div
+      className="relative rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm"
+      style={{ width: size, height: size }}
+    >
+      <Image
+        src={src}
+        alt={BRAND.name}
+        fill
+        sizes={`${size}px`}
+        priority
+        className="object-contain p-2"
+        onError={() => {
+          if (src !== BRAND.fallbackLogo) setSrc(BRAND.fallbackLogo);
+        }}
+      />
+    </div>
+  );
+}
+
+/* =========================================================
+   ENTRY POINT
    ========================================================= */
 export default function AdminPage() {
-  const [loading, setLoading] = useState(true);
+  const [booting, setBooting] = useState(true);
   const [session, setSession] = useState(null);
 
   useEffect(() => {
     let unsub = null;
+
     (async () => {
       const { data } = await supabase.auth.getSession();
       setSession(data?.session || null);
-      const { data: sub } = await supabase.auth.onAuthStateChange((_e, s) => setSession(s || null));
+      const { data: sub } = await supabase.auth.onAuthStateChange((_e, s) =>
+        setSession(s || null)
+      );
       unsub = sub?.subscription || null;
-      setLoading(false);
+      setBooting(false);
     })();
+
     return () => unsub?.unsubscribe?.();
   }, []);
 
-  if (loading) return <LoadingScreen />;
+  if (booting) return <BootScreen />;
   if (!session) return <LoginScreen />;
-  return <AdminDashboard session={session} />;
+  return <Shell session={session} />;
+}
+
+/* =========================================================
+   BOOT
+   ========================================================= */
+function BootScreen() {
+  return (
+    <div
+      className="min-h-screen flex flex-col items-center justify-center"
+      style={{
+        background:
+          "radial-gradient(900px 600px at 20% 20%, rgba(14,165,233,0.18), transparent 60%), radial-gradient(900px 600px at 80% 80%, rgba(20,184,166,0.14), transparent 55%), #F8FAFC",
+      }}
+    >
+      <div className="animate-pulse">
+        <BrandMark size={72} />
+      </div>
+      <p className="mt-5 text-xs font-black tracking-widest text-slate-500 uppercase">
+        Estableciendo conexión…
+      </p>
+    </div>
+  );
 }
 
 /* =========================================================
@@ -124,13 +235,14 @@ export default function AdminPage() {
 function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState({ text: "", type: "" });
+  const [msg, setMsg] = useState({ type: "", text: "" });
 
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
-    setMsg({ text: "", type: "" });
+    setMsg({ type: "", text: "" });
 
     try {
       const em = normEmail(email);
@@ -139,7 +251,7 @@ function LoginScreen() {
       const { error } = await supabase.auth.signInWithPassword({ email: em, password });
       if (error) throw error;
     } catch (err) {
-      setMsg({ text: err?.message || "Error de autenticación", type: "error" });
+      setMsg({ type: "error", text: err?.message || "Error de autenticación" });
     } finally {
       setBusy(false);
     }
@@ -147,66 +259,72 @@ function LoginScreen() {
 
   return (
     <div
-      className="min-h-screen w-full flex items-center justify-center p-4 relative overflow-hidden"
+      className="min-h-screen w-full flex items-center justify-center p-5"
       style={{
         background:
           "radial-gradient(900px 600px at 20% 20%, rgba(14,165,233,0.18), transparent 60%), radial-gradient(900px 600px at 80% 80%, rgba(20,184,166,0.14), transparent 55%), #F8FAFC",
       }}
     >
-      <div className="w-full max-w-md bg-white rounded-[2rem] shadow-2xl overflow-hidden relative z-10 animate-slide-up border border-slate-200">
-        <div className="p-8 text-center border-b border-slate-100 bg-slate-50/70">
-          <div className="mx-auto h-16 w-16 rounded-2xl flex items-center justify-center shadow-lg mb-4 bg-white overflow-hidden border border-slate-200">
-            <Image src={BRAND_ICON} alt="UnicOs" width={64} height={64} className="object-contain p-2" priority />
+      <div className="w-full max-w-md bg-white border border-slate-200 rounded-[2rem] shadow-2xl overflow-hidden">
+        <div className="p-8 bg-slate-50/70 border-b border-slate-100 text-center">
+          <div className="mx-auto mb-4">
+            <BrandMark size={70} />
           </div>
-
           <h1 className="text-2xl font-black text-slate-900 tracking-tight">
             UnicOs <span className="text-sky-600">Admin</span>
           </h1>
-          <p className="text-xs font-bold text-slate-500 tracking-widest uppercase mt-2">Central Command</p>
+          <p className="text-xs font-bold text-slate-500 tracking-widest uppercase mt-2">
+            Central Command
+          </p>
         </div>
 
         <form onSubmit={submit} className="p-8 space-y-5">
           <div>
-            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Correo</label>
+            <label className="text-xs font-black uppercase tracking-widest text-slate-500 ml-1">
+              Correo
+            </label>
             <input
-              className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-4 rounded-xl outline-none focus:border-sky-600 focus:ring-4 focus:ring-sky-600/10 transition-all font-semibold text-slate-800"
+              type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="admin@scorestore.com"
-              type="email"
+              className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-4 rounded-xl outline-none focus:border-sky-600 focus:ring-4 focus:ring-sky-600/10 transition-all font-bold text-slate-800"
               required
             />
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-500 uppercase ml-1">Clave</label>
+            <label className="text-xs font-black uppercase tracking-widest text-slate-500 ml-1">
+              Clave
+            </label>
             <input
-              className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-4 rounded-xl outline-none focus:border-sky-600 focus:ring-4 focus:ring-sky-600/10 transition-all font-semibold text-slate-800"
+              type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              type="password"
+              className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-4 rounded-xl outline-none focus:border-sky-600 focus:ring-4 focus:ring-sky-600/10 transition-all font-bold text-slate-800"
               required
             />
           </div>
 
-          {msg.text && (
+          {msg.text ? (
             <div
               className={clsx(
-                "p-4 rounded-xl text-sm font-bold flex items-start gap-2",
+                "p-4 rounded-xl text-sm font-black flex items-start gap-2",
                 msg.type === "error" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"
               )}
             >
-              <AlertTriangle size={18} className="shrink-0 mt-0.5" /> <span>{msg.text}</span>
+              <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+              <span>{msg.text}</span>
             </div>
-          )}
+          ) : null}
 
           <button
             disabled={busy}
-            className="w-full text-white font-black py-4 rounded-xl shadow-lg transition-colors duration-300 disabled:opacity-50"
-            style={{ background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" }}
+            className="w-full py-4 rounded-xl text-white font-black shadow-lg disabled:opacity-60"
+            style={{ background: BRAND.grad }}
           >
-            {busy ? "AUTENTICANDO..." : "INICIAR SESIÓN"}
+            {busy ? "AUTENTICANDO…" : "INICIAR SESIÓN"}
           </button>
         </form>
       </div>
@@ -215,61 +333,52 @@ function LoginScreen() {
 }
 
 /* =========================================================
-   SHELL
+   APP SHELL
    ========================================================= */
-function AdminDashboard({ session }) {
-  const token = session?.access_token || "";
-  const email = session?.user?.email || "";
+function Shell({ session }) {
+  const { toast, show: toastShow } = useToast();
 
-  const [orgs, setOrgs] = useState([]);
-  const [memberships, setMemberships] = useState([]);
-  const [selectedOrgId, setSelectedOrgId] = useState(null);
-  const [activeTab, setActiveTab] = useState("dashboard");
+  const token = session?.access_token || "";
+  const userEmail = normEmail(session?.user?.email);
+
   const [loading, setLoading] = useState(true);
+  const [orgs, setOrgs] = useState([]);
+  const [selectedOrgId, setSelectedOrgId] = useState(null);
+
+  const [role, setRole] = useState("viewer");
+  const [activeTab, setActiveTab] = useState("dashboard");
+
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const [toast, setToast] = useState(null);
-  const toastTimer = useRef(null);
-
-  const [aiOpen, setAiOpen] = useState(false);
+  // Global Search (orders + products)
   const [globalQuery, setGlobalQuery] = useState("");
-  const [globalResults, setGlobalResults] = useState({ orders: [], products: [] });
   const [globalOpen, setGlobalOpen] = useState(false);
+  const [globalResults, setGlobalResults] = useState({ orders: [], products: [] });
 
-  const selectedMembership = useMemo(
-    () => memberships.find((m) => String(m.org_id) === String(selectedOrgId)) || null,
-    [memberships, selectedOrgId]
-  );
-  const role = String(selectedMembership?.role || "viewer").toLowerCase();
-  const canWrite = ["owner", "admin", "ops"].includes(role);
-
-  const showToast = (t) => {
-    setToast(t);
-    clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 2400);
-  };
+  const canInvite = canManageUsers(role);
+  const canWrite = ["owner", "admin", "ops"].includes(String(role || "").toLowerCase());
 
   useEffect(() => {
     async function init() {
+      setLoading(true);
       try {
-        setLoading(true);
-
-        const em = normEmail(email);
+        // memberships by email
         const { data: mems, error: memErr } = await supabase
           .from("admin_users")
-          .select("organization_id, role")
-          .ilike("email", em)
+          .select("organization_id, role, is_active")
+          .ilike("email", userEmail)
           .eq("is_active", true);
 
         if (memErr) throw memErr;
 
-        const mapped = (mems || []).map((m) => ({ org_id: m.organization_id, role: m.role }));
-        setMemberships(mapped);
+        const orgIds = Array.from(
+          new Set((mems || []).map((m) => m.organization_id).filter(Boolean))
+        );
 
-        const orgIds = Array.from(new Set(mapped.map((m) => m.org_id).filter(Boolean)));
         if (!orgIds.length) {
-          setSelectedOrgId(null);
           setOrgs([]);
+          setSelectedOrgId(null);
+          setRole("viewer");
           return;
         }
 
@@ -282,52 +391,85 @@ function AdminDashboard({ session }) {
         if (orgErr) throw orgErr;
 
         setOrgs(orgData || []);
-        setSelectedOrgId(orgData?.[0]?.id || null);
+
+        // pick preferred (score if exists)
+        const preferScore = (orgData || []).find((o) =>
+          String(o.slug || o.name || "").toLowerCase().includes("score")
+        );
+        const pick = preferScore?.id || orgData?.[0]?.id;
+
+        setSelectedOrgId(pick || null);
+
+        // role for selected org
+        const my = (mems || []).find((m) => String(m.organization_id) === String(pick));
+        setRole(String(my?.role || "viewer").toLowerCase());
       } catch (e) {
         console.error(e);
-        setSelectedOrgId(null);
         setOrgs([]);
+        setSelectedOrgId(null);
+        setRole("viewer");
       } finally {
         setLoading(false);
       }
     }
     init();
-  }, [email]);
+  }, [userEmail]);
 
   useEffect(() => {
+    // update role when org changes
+    (async () => {
+      if (!selectedOrgId) return;
+      const { data } = await supabase
+        .from("admin_users")
+        .select("role,is_active")
+        .eq("organization_id", selectedOrgId)
+        .ilike("email", userEmail)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      setRole(String(data?.role || "viewer").toLowerCase());
+    })();
+  }, [selectedOrgId, userEmail]);
+
+  // Global search debounce
+  useEffect(() => {
     let alive = true;
-    const run = async () => {
-      const q = globalQuery.trim();
-      if (q.length < 2 || !selectedOrgId) {
-        if (alive) setGlobalResults({ orders: [], products: [] });
-        return;
+    const q = globalQuery.trim();
+    if (!q || q.length < 2 || !selectedOrgId) {
+      setGlobalResults({ orders: [], products: [] });
+      return;
+    }
+
+    const t = setTimeout(async () => {
+      try {
+        const [oRes, pRes] = await Promise.all([
+          supabase
+            .from("orders")
+            .select("id, created_at, customer_name, email, amount_total_mxn, status, stripe_session_id")
+            .eq("organization_id", selectedOrgId)
+            .or(`customer_name.ilike.%${q}%,email.ilike.%${q}%,id.ilike.%${q}%`)
+            .order("created_at", { ascending: false })
+            .limit(6),
+          supabase
+            .from("products")
+            .select("id, name, sku, price_mxn, stock, is_active")
+            .eq("organization_id", selectedOrgId)
+            .or(`name.ilike.%${q}%,sku.ilike.%${q}%`)
+            .order("created_at", { ascending: false })
+            .limit(6),
+        ]);
+
+        if (!alive) return;
+        setGlobalResults({
+          orders: oRes?.data || [],
+          products: pRes?.data || [],
+        });
+      } catch {
+        if (!alive) return;
+        setGlobalResults({ orders: [], products: [] });
       }
+    }, 220);
 
-      const [oRes, pRes] = await Promise.all([
-        supabase
-          .from("orders")
-          .select("id, created_at, customer_name, email, amount_total_mxn, status, stripe_session_id")
-          .eq("organization_id", selectedOrgId)
-          .or(`customer_name.ilike.%${q}%,email.ilike.%${q}%,id.ilike.%${q}%`)
-          .order("created_at", { ascending: false })
-          .limit(6),
-        supabase
-          .from("products")
-          .select("id, name, sku, price_mxn, stock, is_active")
-          .eq("organization_id", selectedOrgId)
-          .or(`name.ilike.%${q}%,sku.ilike.%${q}%`)
-          .order("created_at", { ascending: false })
-          .limit(6),
-      ]);
-
-      if (!alive) return;
-      setGlobalResults({
-        orders: oRes?.data || [],
-        products: pRes?.data || [],
-      });
-    };
-
-    const t = setTimeout(run, 220);
     return () => {
       alive = false;
       clearTimeout(t);
@@ -336,21 +478,32 @@ function AdminDashboard({ session }) {
 
   const signOut = () => supabase.auth.signOut();
 
-  if (loading) return <LoadingScreen />;
-  if (!selectedOrgId) return <EmptyStateMultiTenant onExit={() => supabase.auth.signOut()} />;
+  if (loading) return <BootScreen />;
 
+  if (!selectedOrgId) {
+    return (
+      <EmptyState
+        title="Acceso restringido"
+        desc="Tu cuenta existe, pero no está vinculada a ninguna organización con acceso admin."
+        actionLabel="Salir"
+        onAction={() => supabase.auth.signOut()}
+      />
+    );
+  }
+
+  // Modules aligned to current RBAC in src/lib/authz.js
   const ALL_TABS = [
-    { id: "dashboard", label: "Finanzas & KPIs", icon: <LayoutDashboard size={20} /> },
+    { id: "dashboard", label: "Finanzas", icon: <LayoutDashboard size={20} /> },
     { id: "orders", label: "Pedidos", icon: <ShoppingCart size={20} /> },
-    { id: "shipping", label: "Envíos", icon: <Truck size={20} /> },
     { id: "products", label: "Productos", icon: <Package size={20} /> },
     { id: "crm", label: "Clientes", icon: <Users size={20} /> },
     { id: "marketing", label: "Marketing", icon: <Megaphone size={20} /> },
     { id: "users", label: "Equipo", icon: <Shield size={20} /> },
-    { id: "integrations", label: "Integraciones", icon: <Settings size={20} /> },
-  ];
-  const TABS = ALL_TABS.filter((t) => hasPerm(role, t.id));
-  const activeLabel = TABS.find((t) => t.id === activeTab)?.label || "Panel";
+    { id: "settings", label: "Integraciones", icon: <Settings size={20} /> },
+  ].filter((t) => hasPerm(role, t.id));
+
+  const activeLabel =
+    ALL_TABS.find((t) => t.id === activeTab)?.label || "Panel";
 
   return (
     <div
@@ -360,12 +513,13 @@ function AdminDashboard({ session }) {
           "linear-gradient(180deg, rgba(14,165,233,0.06), rgba(20,184,166,0.04) 35%, rgba(248,250,252,1) 100%)",
       }}
     >
-      {mobileMenuOpen && (
+      {/* Mobile overlay */}
+      {mobileMenuOpen ? (
         <div
           className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 md:hidden"
           onClick={() => setMobileMenuOpen(false)}
         />
-      )}
+      ) : null}
 
       {/* Sidebar */}
       <aside
@@ -375,31 +529,34 @@ function AdminDashboard({ session }) {
         )}
       >
         <div className="p-6 flex items-center gap-3 border-b border-slate-200 bg-slate-50/70">
-          <div className="h-10 w-10 rounded-xl flex items-center justify-center shadow-sm overflow-hidden bg-white border border-slate-200">
-            <Image src={BRAND_ICON} alt="UnicOs" width={40} height={40} className="object-contain p-1.5" priority />
-          </div>
-          <div>
-            <h1 className="text-lg font-black text-slate-900 leading-tight tracking-tight">UnicOs</h1>
+          <BrandMark size={44} />
+          <div className="min-w-0">
+            <h1 className="text-lg font-black text-slate-900 leading-tight tracking-tight truncate">
+              UnicOs
+            </h1>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-              <p className="text-[10px] font-bold tracking-widest uppercase text-slate-500">{role}</p>
+              <p className="text-[10px] font-black tracking-widest uppercase text-slate-500">
+                {role}
+              </p>
             </div>
           </div>
         </div>
 
+        {/* Org picker */}
         <div className="p-4 border-b border-slate-200">
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-2 mb-2 block">
-            Organización Activa
+          <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mb-2 block">
+            Organización activa
           </label>
           <div className="relative">
             <select
-              className="w-full appearance-none bg-white border border-slate-200 rounded-xl py-3 px-4 text-sm font-black text-slate-900 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
-              value={selectedOrgId || ""}
+              value={selectedOrgId}
               onChange={(e) => {
                 setSelectedOrgId(e.target.value);
                 setActiveTab("dashboard");
-                showToast({ type: "info", text: "Organización actualizada." });
+                toastShow({ type: "info", text: "Organización actualizada." });
               }}
+              className="w-full appearance-none bg-white border border-slate-200 rounded-xl py-3 px-4 text-sm font-black text-slate-900 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
             >
               {orgs.map((o) => (
                 <option key={o.id} value={o.id}>
@@ -407,12 +564,16 @@ function AdminDashboard({ session }) {
                 </option>
               ))}
             </select>
-            <ChevronDown className="absolute right-4 top-3.5 text-slate-400 pointer-events-none" size={16} />
+            <ChevronDown
+              className="absolute right-4 top-3.5 text-slate-400 pointer-events-none"
+              size={16}
+            />
           </div>
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto custom-scrollbar">
-          {TABS.map((tab) => (
+        {/* Nav */}
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          {ALL_TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => {
@@ -421,11 +582,17 @@ function AdminDashboard({ session }) {
               }}
               className={clsx(
                 "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-black transition-all",
-                activeTab === tab.id ? "text-white shadow-lg" : "hover:bg-slate-100 text-slate-700"
+                activeTab === tab.id
+                  ? "text-white shadow-lg"
+                  : "hover:bg-slate-100 text-slate-700"
               )}
-              style={activeTab === tab.id ? { background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" } : undefined}
+              style={
+                activeTab === tab.id ? { background: BRAND.grad } : undefined
+              }
             >
-              <span className={activeTab === tab.id ? "text-white" : "text-slate-400"}>{tab.icon}</span>
+              <span className={activeTab === tab.id ? "text-white" : "text-slate-400"}>
+                {tab.icon}
+              </span>
               {tab.label}
             </button>
           ))}
@@ -433,29 +600,17 @@ function AdminDashboard({ session }) {
 
         <div className="p-4 border-t border-slate-200 bg-slate-50/70 space-y-2">
           <button
-            onClick={() => setAiOpen(true)}
-            className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 transition-colors"
-          >
-            <span className="flex items-center gap-2 text-xs font-black text-slate-900">
-              <Sparkles size={14} /> Unico IA
-            </span>
-            <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200">
-              AI
-            </span>
-          </button>
-
-          <button
             onClick={signOut}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl hover:bg-rose-50 hover:text-rose-700 text-xs font-black text-slate-700 transition-colors border border-slate-200 bg-white"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-rose-50 hover:text-rose-700 text-xs font-black text-slate-700 transition-colors"
           >
-            <LogOut size={14} /> Cerrar Sesión
+            <LogOut size={14} /> Cerrar sesión
           </button>
         </div>
       </aside>
 
       {/* Main */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        <header className="z-20 px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 bg-white/80 backdrop-blur-md border-b border-slate-200 glass-header">
+        <header className="z-20 px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 bg-white/80 backdrop-blur-md border-b border-slate-200">
           <div className="flex items-center gap-4 min-w-0">
             <button
               onClick={() => setMobileMenuOpen(true)}
@@ -466,13 +621,17 @@ function AdminDashboard({ session }) {
             </button>
 
             <div className="min-w-0">
-              <h2 className="text-xl font-black text-slate-900 tracking-tight truncate">{activeLabel}</h2>
-              <p className="text-xs font-semibold text-slate-500 truncate">{email}</p>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight truncate">
+                {activeLabel}
+              </h2>
+              <p className="text-xs font-semibold text-slate-500 truncate">
+                {userEmail}
+              </p>
             </div>
           </div>
 
-          {/* Global Search */}
-          <div className="relative hidden md:block w-[420px] max-w-[42vw]">
+          {/* Global search */}
+          <div className="relative hidden md:block w-[440px] max-w-[44vw]">
             <Search className="absolute left-3 top-3 text-slate-400" size={18} />
             <input
               value={globalQuery}
@@ -485,17 +644,25 @@ function AdminDashboard({ session }) {
               className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
             />
 
-            {globalOpen && globalQuery.trim().length >= 2 && (
+            {globalOpen && globalQuery.trim().length >= 2 ? (
               <div className="absolute top-12 left-0 right-0 bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden z-50">
                 <div className="p-3 border-b border-slate-100 flex items-center justify-between">
-                  <p className="text-xs font-black uppercase tracking-widest text-slate-500">Resultados</p>
-                  <button onClick={() => setGlobalOpen(false)} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200">
+                  <p className="text-xs font-black uppercase tracking-widest text-slate-500">
+                    Resultados
+                  </p>
+                  <button
+                    onClick={() => setGlobalOpen(false)}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200"
+                    aria-label="Cerrar resultados"
+                  >
                     <X size={16} />
                   </button>
                 </div>
 
                 <div className="p-3">
-                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">Pedidos</p>
+                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">
+                    Pedidos
+                  </p>
                   {globalResults.orders.length ? (
                     <div className="space-y-1">
                       {globalResults.orders.map((o) => (
@@ -505,26 +672,36 @@ function AdminDashboard({ session }) {
                           onClick={() => {
                             setActiveTab("orders");
                             setGlobalOpen(false);
-                            showToast({ type: "info", text: "Abriendo pedidos…" });
+                            toastShow({ type: "info", text: "Abriendo pedidos…" });
                           }}
                         >
                           <div className="flex items-center justify-between">
                             <p className="font-black text-slate-900">
                               #{String(o.id).split("-")[0].toUpperCase()}{" "}
-                              <span className="text-slate-500 font-semibold">• {moneyMXN(o.amount_total_mxn)}</span>
+                              <span className="text-slate-500 font-semibold">
+                                • {moneyMXN(o.amount_total_mxn)}
+                              </span>
                             </p>
-                            <span className="text-xs font-black text-slate-600">{String(o.status || "").toUpperCase()}</span>
+                            <span className="text-xs font-black text-slate-600">
+                              {String(o.status || "").toUpperCase()}
+                            </span>
                           </div>
-                          <p className="text-xs font-semibold text-slate-500">{o.customer_name || o.email || "—"}</p>
+                          <p className="text-xs font-semibold text-slate-500">
+                            {o.customer_name || o.email || "—"}
+                          </p>
                         </button>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm font-semibold text-slate-500">Sin coincidencias.</p>
+                    <p className="text-sm font-semibold text-slate-500">
+                      Sin coincidencias.
+                    </p>
                   )}
 
                   <div className="mt-4">
-                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">Productos</p>
+                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">
+                      Productos
+                    </p>
                     {globalResults.products.length ? (
                       <div className="space-y-1">
                         {globalResults.products.map((p) => (
@@ -534,67 +711,102 @@ function AdminDashboard({ session }) {
                             onClick={() => {
                               setActiveTab("products");
                               setGlobalOpen(false);
-                              showToast({ type: "info", text: "Abriendo productos…" });
+                              toastShow({ type: "info", text: "Abriendo productos…" });
                             }}
                           >
                             <p className="font-black text-slate-900">{p.name}</p>
                             <p className="text-xs font-semibold text-slate-500">
-                              SKU: {p.sku || "—"} • {moneyMXN(p.price_mxn)} • Stock: {num(p.stock)}
+                              SKU: {p.sku || "—"} • {moneyMXN(p.price_mxn)} • Stock:{" "}
+                              {num(p.stock)}
                             </p>
                           </button>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-sm font-semibold text-slate-500">Sin coincidencias.</p>
+                      <p className="text-sm font-semibold text-slate-500">
+                        Sin coincidencias.
+                      </p>
                     )}
                   </div>
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
 
           <div className="flex items-center gap-2 md:gap-3">
-            <button className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700" aria-label="Notificaciones">
+            <button
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"
+              aria-label="Notificaciones"
+              title="Notificaciones"
+            >
               <Bell size={18} />
             </button>
 
             <button
-              onClick={() => setAiOpen(true)}
+              onClick={() => toastShow({ type: "info", text: "IA: en el siguiente bloque te la dejo embebida pro." })}
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-white font-black text-xs shadow-sm"
-              style={{ background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" }}
+              style={{ background: BRAND.grad }}
+              title="Unico IA"
             >
               <Sparkles size={16} /> IA
             </button>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8 pb-28">
-          <div className="max-w-7xl mx-auto animate-slide-up space-y-6">
-            {activeTab === "dashboard" && <DashboardView orgId={selectedOrgId} token={token} showToast={showToast} />}
-            {activeTab === "orders" && <OrdersView orgId={selectedOrgId} token={token} role={role} canWrite={canWrite} showToast={showToast} />}
-            {activeTab === "shipping" && <ShippingView orgId={selectedOrgId} showToast={showToast} />}
-            {activeTab === "products" && <ProductsView orgId={selectedOrgId} role={role} showToast={showToast} />}
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24">
+          <div className="max-w-7xl mx-auto space-y-6">
+            {activeTab === "dashboard" && (
+              <DashboardView orgId={selectedOrgId} token={token} toast={toastShow} />
+            )}
+
+            {activeTab === "orders" && (
+              <OrdersAndShippingView
+                orgId={selectedOrgId}
+                token={token}
+                canWrite={canWrite}
+                toast={toastShow}
+              />
+            )}
+
+            {activeTab === "products" && (
+              <ProductsView orgId={selectedOrgId} canWrite={canWrite} toast={toastShow} />
+            )}
+
             {activeTab === "crm" && <CRMView orgId={selectedOrgId} />}
-            {activeTab === "marketing" && <MarketingView orgId={selectedOrgId} showToast={showToast} />}
-            {activeTab === "users" && <UsersView orgId={selectedOrgId} token={token} role={role} showToast={showToast} />}
-            {activeTab === "integrations" && <IntegrationsView token={token} showToast={showToast} />}
+
+            {activeTab === "marketing" && (
+              <MarketingView orgId={selectedOrgId} toast={toastShow} />
+            )}
+
+            {activeTab === "users" && (
+              <UsersView
+                orgId={selectedOrgId}
+                token={token}
+                role={role}
+                canInvite={canInvite}
+                toast={toastShow}
+              />
+            )}
+
+            {activeTab === "settings" && (
+              <IntegrationsView token={token} toast={toastShow} />
+            )}
           </div>
         </div>
 
-        {aiOpen && <AISidekick orgId={selectedOrgId} token={token} onClose={() => setAiOpen(false)} />}
-
-        {toast && <Toast t={toast} />}
+        {toast ? <Toast t={toast} /> : null}
       </main>
     </div>
   );
 }
 
 /* =========================================================
-   DASHBOARD (incluye: Stripe fee + Envía cost + Profit 70%)
+   DASHBOARD (Stripe + Envía + Score 70%)
    ========================================================= */
-function DashboardView({ orgId, token, showToast }) {
+function DashboardView({ orgId, token, toast }) {
   const [range, setRange] = useState("30d");
   const [busy, setBusy] = useState(true);
+
   const [kpi, setKpi] = useState({
     gross: 0,
     orders: 0,
@@ -602,11 +814,15 @@ function DashboardView({ orgId, token, showToast }) {
     stripeFee: 0,
     stripeMode: "estimate",
     enviaCost: 0,
-    profit100: 0,
-    profit70: 0,
+    net100: 0,
+    score70: 0,
   });
 
-  const load = async () => {
+  const [lastOrders, setLastOrders] = useState([]);
+
+  const load = useCallback(async () => {
+    if (!isUuid(orgId)) return;
+
     setBusy(true);
     try {
       const now = new Date();
@@ -615,13 +831,15 @@ function DashboardView({ orgId, token, showToast }) {
           ? new Date(now.getTime() - 7 * 864e5)
           : range === "30d"
           ? new Date(now.getTime() - 30 * 864e5)
-          : range === "month"
-          ? new Date(now.getFullYear(), now.getMonth(), 1)
+          : range === "90d"
+          ? new Date(now.getTime() - 90 * 864e5)
           : null;
 
       let q = supabase
         .from("orders")
-        .select("amount_total_mxn, status, stripe_session_id, stripe_payment_intent_id, created_at")
+        .select(
+          "id, created_at, customer_name, email, amount_total_mxn, status, stripe_session_id"
+        )
         .eq("organization_id", orgId)
         .eq("status", "paid")
         .order("created_at", { ascending: false })
@@ -637,9 +855,9 @@ function DashboardView({ orgId, token, showToast }) {
       const count = list.length;
       const avg = count ? gross / count : 0;
 
-      const sessions = list.map((o) => o.stripe_session_id).filter(Boolean).slice(0, 120);
+      const sessions = clampList(list.map((o) => o.stripe_session_id).filter(Boolean), 120);
 
-      // Envía cost desde shipping_labels.raw
+      // Envía cost (real desde shipping_labels.raw)
       let enviaCost = 0;
       if (sessions.length) {
         const { data: labels } = await supabase
@@ -648,74 +866,86 @@ function DashboardView({ orgId, token, showToast }) {
           .eq("org_id", orgId)
           .in("stripe_session_id", sessions);
 
-        for (const l of labels || []) enviaCost += extractEnviaCost(l?.raw);
+        for (const l of labels || []) {
+          enviaCost += extractEnviaCost(l?.raw);
+        }
       }
 
-      // Stripe fee real (server) o estimado
+      // Stripe fee (real via /api/stripe/fees; fallback estimate)
       let stripeFee = 0;
       let stripeMode = "estimate";
 
       if (sessions.length) {
-        const res = await fetch("/api/stripe/fees", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ org_id: orgId, stripe_session_ids: sessions }),
-        });
+        try {
+          const res = await fetch("/api/stripe/fees", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ org_id: orgId, stripe_session_ids: sessions }),
+          });
 
-        const j = await res.json().catch(() => ({}));
-        if (res.ok && j?.ok) {
-          stripeFee = Number(j.total_fee_mxn || 0);
-          stripeMode = String(j.mode || "stripe");
-        } else {
+          const j = await res.json().catch(() => ({}));
+          if (res.ok && j?.ok) {
+            stripeFee = Number(j.total_fee_mxn || 0);
+            stripeMode = "stripe";
+          } else {
+            stripeFee = estimateStripeFeeMXN(list);
+            stripeMode = "estimate";
+          }
+        } catch {
           stripeFee = estimateStripeFeeMXN(list);
           stripeMode = "estimate";
         }
       } else {
-        stripeFee = estimateStripeFeeMXN(list);
+        stripeFee = 0;
         stripeMode = "estimate";
       }
 
-      const profit100 = Math.max(0, gross - stripeFee - enviaCost);
-      const profit70 = profit100 * 0.7;
+      const net100 = Math.max(0, gross - stripeFee - enviaCost);
+      const score70 = net100 * 0.7;
 
-      setKpi({ gross, orders: count, avg, stripeFee, stripeMode, enviaCost, profit100, profit70 });
+      setKpi({ gross, orders: count, avg, stripeFee, stripeMode, enviaCost, net100, score70 });
+      setLastOrders(list.slice(0, 6));
     } catch (e) {
       console.error(e);
-      showToast?.({ type: "error", text: "No se pudo cargar el dashboard." });
+      toast?.({ type: "error", text: "No se pudo cargar el dashboard." });
     } finally {
       setBusy(false);
     }
-  };
+  }, [orgId, token, range, toast]);
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, range]);
+  }, [load]);
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden tech-shadow">
+      {/* Hero KPI */}
+      <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
         <div
           className="p-8 md:p-10 relative overflow-hidden"
           style={{
             background:
-              "radial-gradient(900px 450px at 15% 0%, rgba(14,165,233,0.14), transparent 50%), radial-gradient(900px 450px at 85% 10%, rgba(20,184,166,0.10), transparent 55%), #0B1220",
+              "radial-gradient(900px 450px at 15% 0%, rgba(14,165,233,0.14), transparent 50%), radial-gradient(900px 450px at 85% 10%, rgba(20,184,166,0.12), transparent 55%), #0B1220",
           }}
         >
           <div className="relative z-10">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div>
                 <p className="text-slate-300/90 text-xs font-black uppercase tracking-widest mb-2 flex items-center gap-2">
-                  <BadgeDollarSign size={14} className="text-sky-300" /> Ganancia Score (70%)
+                  <Sparkles size={14} className="text-sky-300" /> Ganancia Score (70%)
                 </p>
 
                 <div className="flex items-end gap-4 flex-wrap">
                   <h2 className="text-4xl md:text-6xl font-black text-white tracking-tighter">
-                    {busy ? "—" : moneyMXN(kpi.profit70)}
+                    {busy ? "—" : moneyMXN(kpi.score70)}
                   </h2>
                   <div className="pb-1">
                     <p className="text-xs font-bold text-slate-300/80">
-                      Neto 100%: <span className="font-black text-white">{moneyMXN(kpi.profit100)}</span>
+                      Neto 100%:{" "}
+                      <span className="font-black text-white">{moneyMXN(kpi.net100)}</span>
                     </p>
                   </div>
                 </div>
@@ -729,7 +959,7 @@ function DashboardView({ orgId, token, showToast }) {
                 >
                   <option value="7d">Últimos 7 días</option>
                   <option value="30d">Últimos 30 días</option>
-                  <option value="month">Este mes</option>
+                  <option value="90d">Últimos 90 días</option>
                   <option value="all">Todo</option>
                 </select>
 
@@ -746,17 +976,96 @@ function DashboardView({ orgId, token, showToast }) {
               <MiniKPI label="Ventas brutas" value={moneyMXN(kpi.gross)} />
               <MiniKPI label="Pedidos pagados" value={num(kpi.orders)} />
               <MiniKPI label="Ticket promedio" value={moneyMXN(kpi.avg)} />
-              <MiniKPI label="Comisión Stripe" value={moneyMXN(kpi.stripeFee)} note={kpi.stripeMode === "stripe" ? "Real" : "Estimado"} />
+              <MiniKPI
+                label="Comisión Stripe"
+                value={moneyMXN(kpi.stripeFee)}
+                note={kpi.stripeMode === "stripe" ? "Real" : "Estimado"}
+              />
               <MiniKPI label="Costo Envía" value={moneyMXN(kpi.enviaCost)} />
-              <MiniKPI label="Estado" value={busy ? "Cargando…" : "Listo"} />
-              <MiniKPI label="Plataforma" value="Score Store" />
               <MiniKPI label="Regla" value="Score = 70%" />
+              <MiniKPI label="Estado" value={busy ? "Cargando…" : "Listo"} />
+              <MiniKPI label="Base" value="orders + shipping_labels" />
             </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 tech-shadow flex items-start justify-between gap-4">
+      {/* Last orders */}
+      <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+          <div>
+            <h3 className="text-xl font-black text-slate-900">Últimos pedidos pagados</h3>
+            <p className="text-sm font-semibold text-slate-600">
+              Vista rápida para detectar anomalías.
+            </p>
+          </div>
+          <span className="text-xs font-black text-slate-500 bg-white border border-slate-200 px-3 py-2 rounded-xl">
+            {range === "all" ? "Todo" : range}
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm whitespace-nowrap">
+            <thead className="bg-slate-50 text-slate-600 uppercase text-[11px] tracking-widest font-black border-b border-slate-200">
+              <tr>
+                <th className="p-4 text-left pl-6">ID</th>
+                <th className="p-4 text-left">Cliente</th>
+                <th className="p-4 text-left">Total</th>
+                <th className="p-4 text-left">Fecha</th>
+                <th className="p-4 text-right pr-6">Stripe</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {busy ? (
+                <tr>
+                  <td colSpan={5} className="p-10 text-center text-slate-500 font-bold">
+                    Cargando…
+                  </td>
+                </tr>
+              ) : lastOrders.length ? (
+                lastOrders.map((o) => (
+                  <tr key={o.id} className="hover:bg-slate-50">
+                    <td className="p-4 pl-6 font-mono font-black text-sky-700">
+                      #{String(o.id).split("-")[0].toUpperCase()}
+                    </td>
+                    <td className="p-4 font-bold text-slate-900">
+                      {o.customer_name || o.email || "—"}
+                    </td>
+                    <td className="p-4 font-black text-slate-900">{moneyMXN(o.amount_total_mxn)}</td>
+                    <td className="p-4 text-slate-600 font-semibold">
+                      {o.created_at ? new Date(o.created_at).toLocaleString("es-MX") : "—"}
+                    </td>
+                    <td className="p-4 pr-6 text-right">
+                      {o.stripe_session_id ? (
+                        <button
+                          onClick={() => {
+                            const url = stripeDashboardUrl(o.stripe_session_id);
+                            if (url) window.open(url, "_blank", "noopener,noreferrer");
+                          }}
+                          className="px-3 py-2 rounded-xl bg-slate-900 text-white font-black text-xs hover:opacity-90 inline-flex items-center gap-2"
+                        >
+                          <ExternalLink size={14} /> Ver
+                        </button>
+                      ) : (
+                        <span className="text-xs font-black text-slate-500">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="p-10 text-center text-slate-500 font-bold">
+                    Todavía no hay pedidos pagados en este rango.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Explanation */}
+      <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm p-6 flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
           <div className="w-11 h-11 rounded-2xl bg-sky-50 border border-sky-100 flex items-center justify-center">
             <Info size={18} className="text-sky-600" />
@@ -764,13 +1073,19 @@ function DashboardView({ orgId, token, showToast }) {
           <div>
             <h4 className="font-black text-slate-900">Cómo se calcula</h4>
             <p className="text-sm font-semibold text-slate-600 mt-1">
-              Bruto − comisión Stripe − costo Envía. Luego mostramos <span className="font-black">70%</span> como “Score”.
+              Bruto − comisión Stripe − costo Envía = Neto (100%). Mostramos 70% como “Score”.
+            </p>
+            <p className="text-xs font-semibold text-slate-500 mt-1">
+              (No incluye costos de producción / COGS.)
             </p>
           </div>
         </div>
+
         <div className="text-right">
-          <p className="text-xs font-black uppercase tracking-widest text-slate-500">Nota</p>
-          <p className="text-sm font-semibold text-slate-600">No incluye costos de producción.</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+            Fuente
+          </p>
+          <p className="text-sm font-black text-slate-900">Supabase</p>
         </div>
       </div>
     </div>
@@ -780,70 +1095,133 @@ function DashboardView({ orgId, token, showToast }) {
 function MiniKPI({ label, value, note }) {
   return (
     <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-300/70 mb-1">{label}</p>
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-300/70 mb-1">
+        {label}
+      </p>
       <p className="text-lg font-black text-white">{value}</p>
-      {note ? <p className="text-[10px] font-bold text-slate-300/70 mt-1">{note}</p> : null}
+      {note ? (
+        <p className="text-[10px] font-bold text-slate-300/70 mt-1">{note}</p>
+      ) : null}
     </div>
   );
 }
 
 /* =========================================================
-   ORDERS
+   ORDERS + SHIPPING (inside orders tab)
    ========================================================= */
-function OrdersView({ orgId, token, role, canWrite, showToast }) {
+function OrdersAndShippingView({ orgId, token, canWrite, toast }) {
+  const [subTab, setSubTab] = useState("orders"); // orders | shipping
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm p-4 md:p-6 flex items-end justify-between gap-3">
+        <div>
+          <h3 className="text-2xl font-black text-slate-900 tracking-tight">Operación</h3>
+          <p className="text-sm font-semibold text-slate-600">
+            Pedidos + Envíos (en un mismo módulo para no romper permisos).
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => setSubTab("orders")}
+            className={clsx(
+              "px-4 py-2.5 rounded-xl font-black text-sm border",
+              subTab === "orders"
+                ? "text-white border-transparent"
+                : "bg-white text-slate-800 border-slate-200 hover:bg-slate-100"
+            )}
+            style={subTab === "orders" ? { background: BRAND.grad } : undefined}
+          >
+            <ShoppingCart size={16} className="inline mr-2" />
+            Pedidos
+          </button>
+          <button
+            onClick={() => setSubTab("shipping")}
+            className={clsx(
+              "px-4 py-2.5 rounded-xl font-black text-sm border",
+              subTab === "shipping"
+                ? "text-white border-transparent"
+                : "bg-white text-slate-800 border-slate-200 hover:bg-slate-100"
+            )}
+            style={subTab === "shipping" ? { background: BRAND.grad } : undefined}
+          >
+            <Truck size={16} className="inline mr-2" />
+            Envíos
+          </button>
+        </div>
+      </div>
+
+      {subTab === "orders" ? (
+        <OrdersView orgId={orgId} token={token} canWrite={canWrite} toast={toast} />
+      ) : (
+        <ShippingView orgId={orgId} toast={toast} />
+      )}
+    </div>
+  );
+}
+
+function OrdersView({ orgId, token, canWrite, toast }) {
   const [busy, setBusy] = useState(true);
-  const [orders, setOrders] = useState([]);
+  const [rows, setRows] = useState([]);
   const [labelsBySession, setLabelsBySession] = useState({});
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
   const [selected, setSelected] = useState(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setBusy(true);
     try {
       let query = supabase
         .from("orders")
-        .select("id, created_at, email, customer_name, items_summary, amount_total_mxn, status, stripe_session_id, stripe_payment_intent_id, shipping_mode, postal_code")
+        .select(
+          "id, created_at, email, customer_name, items_summary, amount_total_mxn, status, stripe_session_id, shipping_mode, postal_code"
+        )
         .eq("organization_id", orgId)
         .order("created_at", { ascending: false })
         .limit(80);
 
       if (status !== "all") query = query.eq("status", status);
-      if (q.trim()) query = query.or(`customer_name.ilike.%${q.trim()}%,email.ilike.%${q.trim()}%,id.ilike.%${q.trim()}%`);
+
+      if (q.trim()) {
+        const s = q.trim();
+        query = query.or(`customer_name.ilike.%${s}%,email.ilike.%${s}%,id.ilike.%${s}%`);
+      }
 
       const { data, error } = await query;
       if (error) throw error;
 
       const list = data || [];
-      setOrders(list);
+      setRows(list);
 
-      const sessions = list.map((o) => o.stripe_session_id).filter(Boolean).slice(0, 200);
+      const sessions = clampList(list.map((o) => o.stripe_session_id).filter(Boolean), 200);
       if (sessions.length) {
         const { data: labels } = await supabase
           .from("shipping_labels")
-          .select("stripe_session_id, tracking_number, label_url, status, raw")
+          .select("stripe_session_id, tracking_number, label_url, status, raw, updated_at")
           .eq("org_id", orgId)
           .in("stripe_session_id", sessions);
 
         const map = {};
         for (const l of labels || []) map[l.stripe_session_id] = l;
         setLabelsBySession(map);
-      } else setLabelsBySession({});
+      } else {
+        setLabelsBySession({});
+      }
     } catch (e) {
       console.error(e);
-      showToast?.({ type: "error", text: "No se pudieron cargar pedidos." });
+      toast?.({ type: "error", text: "No se pudieron cargar pedidos." });
     } finally {
       setBusy(false);
     }
-  };
+  }, [orgId, q, status, toast]);
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, q, status]);
+  }, [load]);
 
   const exportCsv = () => {
-    const rows = (orders || []).map((o) => ({
+    const items = (rows || []).map((o) => ({
       id: o.id,
       created_at: o.created_at,
       customer_name: o.customer_name,
@@ -851,13 +1229,15 @@ function OrdersView({ orgId, token, role, canWrite, showToast }) {
       total_mxn: o.amount_total_mxn,
       status: o.status,
       stripe_session_id: o.stripe_session_id,
+      shipping_mode: o.shipping_mode,
+      postal_code: o.postal_code,
     }));
 
-    const headers = Object.keys(rows[0] || { id: "" });
+    const headers = Object.keys(items[0] || { id: "" });
     const csv =
       headers.join(",") +
       "\n" +
-      rows
+      items
         .map((r) => headers.map((h) => `"${String(r[h] ?? "").replaceAll('"', '""')}"`).join(","))
         .join("\n");
 
@@ -872,11 +1252,13 @@ function OrdersView({ orgId, token, role, canWrite, showToast }) {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm tech-shadow p-4 md:p-6">
+      <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm p-4 md:p-6">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
-            <h3 className="font-black text-2xl text-slate-900 tracking-tight">Pedidos</h3>
-            <p className="text-sm text-slate-600 font-semibold">Acciones rápidas: ver Stripe, ver guía, copiar, reembolsar.</p>
+            <h4 className="font-black text-xl text-slate-900">Pedidos</h4>
+            <p className="text-sm font-semibold text-slate-600">
+              Ver detalle, Stripe, guía, tracking y estatus.
+            </p>
           </div>
 
           <div className="flex flex-col md:flex-row gap-2 md:items-center">
@@ -890,28 +1272,39 @@ function OrdersView({ orgId, token, role, canWrite, showToast }) {
               />
             </div>
 
-            <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white font-black text-slate-800 text-sm">
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white font-black text-slate-800 text-sm"
+            >
               <option value="all">Todos</option>
               <option value="paid">Pagados</option>
               <option value="pending_payment">Pendiente pago</option>
               <option value="pending">Pendiente</option>
               <option value="payment_failed">Pago fallido</option>
-              <option value="refunded">Reembolsado</option>
+              <option value="fulfilled">Fulfilled</option>
+              <option value="cancelled">Cancelado</option>
             </select>
 
-            <button onClick={load} className="px-3 py-2.5 rounded-xl bg-slate-900 text-white font-black text-sm flex items-center gap-2 hover:opacity-90">
+            <button
+              onClick={load}
+              className="px-3 py-2.5 rounded-xl bg-slate-900 text-white font-black text-sm flex items-center gap-2 hover:opacity-90"
+            >
               <RefreshCcw size={16} /> Recargar
             </button>
 
-            <button onClick={exportCsv} className="px-3 py-2.5 rounded-xl bg-slate-100 text-slate-900 font-black text-sm flex items-center gap-2 hover:bg-slate-200 border border-slate-200">
+            <button
+              onClick={exportCsv}
+              className="px-3 py-2.5 rounded-xl bg-slate-100 text-slate-900 font-black text-sm flex items-center gap-2 hover:bg-slate-200 border border-slate-200"
+            >
               <Download size={16} /> CSV
             </button>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden tech-shadow">
-        <div className="overflow-x-auto custom-scrollbar">
+      <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-slate-50 text-slate-600 font-black border-b border-slate-200 text-[11px] uppercase tracking-widest">
               <tr>
@@ -925,26 +1318,42 @@ function OrdersView({ orgId, token, role, canWrite, showToast }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {busy ? (
-                <tr><td colSpan={6} className="px-6 py-10 text-slate-500 font-bold">Cargando…</td></tr>
-              ) : orders.length ? (
-                orders.map((o) => {
+                <tr>
+                  <td colSpan={6} className="px-6 py-10 text-slate-500 font-bold">
+                    Cargando…
+                  </td>
+                </tr>
+              ) : rows.length ? (
+                rows.map((o) => {
                   const label = labelsBySession[o.stripe_session_id] || null;
                   return (
-                    <tr key={o.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => setSelected({ order: o, label })}>
+                    <tr
+                      key={o.id}
+                      className="hover:bg-slate-50 transition-colors cursor-pointer"
+                      onClick={() => setSelected({ order: o, label })}
+                    >
                       <td className="px-6 py-4">
-                        <span className="font-mono font-black text-sky-700">#{String(o.id).split("-")[0].toUpperCase()}</span>
-                        <div className="text-xs text-slate-500 font-semibold mt-1">{o.created_at ? new Date(o.created_at).toLocaleString("es-MX") : "-"}</div>
+                        <span className="font-mono font-black text-sky-700">
+                          #{String(o.id).split("-")[0].toUpperCase()}
+                        </span>
+                        <div className="text-xs text-slate-500 font-semibold mt-1">
+                          {o.created_at ? new Date(o.created_at).toLocaleString("es-MX") : "-"}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="font-black text-slate-900">{o.customer_name || "Sin nombre"}</div>
                         <div className="text-xs text-slate-500 font-semibold">{o.email || "Sin correo"}</div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="text-xs text-slate-700 font-semibold max-w-[360px] truncate" title={o.items_summary || ""}>
-                          {o.items_summary || "Ver detalles"}
+                        <div
+                          className="text-xs text-slate-700 font-semibold max-w-[360px] truncate"
+                          title={o.items_summary || ""}
+                        >
+                          {o.items_summary || "Ver detalle"}
                         </div>
                         <div className="text-[10px] font-black text-slate-500 mt-1 uppercase">
-                          {o.shipping_mode ? `Envío: ${o.shipping_mode}` : "—"} {o.postal_code ? `• CP ${o.postal_code}` : ""}
+                          {o.shipping_mode ? `Envío: ${o.shipping_mode}` : "—"}{" "}
+                          {o.postal_code ? `• CP ${o.postal_code}` : ""}
                         </div>
                       </td>
                       <td className="px-6 py-4 font-black text-slate-900">{moneyMXN(o.amount_total_mxn)}</td>
@@ -959,40 +1368,46 @@ function OrdersView({ orgId, token, role, canWrite, showToast }) {
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-right"><StatusPill status={o.status} /></td>
+                      <td className="px-6 py-4 text-right">
+                        <StatusPill status={o.status} />
+                      </td>
                     </tr>
                   );
                 })
               ) : (
-                <tr><td colSpan={6} className="text-center p-12 text-slate-500 font-bold">Sin registros.</td></tr>
+                <tr>
+                  <td colSpan={6} className="text-center p-12 text-slate-500 font-bold">
+                    Sin registros.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {selected && (
+      {selected ? (
         <OrderModal
           data={selected}
           token={token}
-          role={role}
+          orgId={orgId}
           canWrite={canWrite}
           onClose={() => setSelected(null)}
-          showToast={showToast}
+          toast={toast}
         />
-      )}
+      ) : null}
     </div>
   );
 }
 
-function OrderModal({ data, token, role, canWrite, onClose, showToast }) {
+function OrderModal({ data, token, orgId, canWrite, onClose, toast }) {
   const o = data?.order || {};
   const l = data?.label || null;
 
   const copy = async (txt) => {
     try {
       await navigator.clipboard.writeText(String(txt || ""));
-      showToast?.({ type: "success", text: "Copiado." });
+      toast?.({ type: "success", text: "Copiado." });
     } catch {}
   };
 
@@ -1005,24 +1420,27 @@ function OrderModal({ data, token, role, canWrite, onClose, showToast }) {
     if (l?.label_url) window.open(l.label_url, "_blank", "noopener,noreferrer");
   };
 
-  const refund = async () => {
-    if (!canRefund(role)) return showToast?.({ type: "error", text: "Sin permisos para reembolsar." });
-    if (!confirm("¿Reembolsar este pago en Stripe?")) return;
+  const updateStatus = async (newStatus) => {
+    if (!canWrite) return toast?.({ type: "error", text: "Sin permisos." });
 
     try {
-      const res = await fetch("/api/stripe/refund", {
+      const res = await fetch("/api/orders/update", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ org_id: data?.order?.organization_id || null, order_id: o.id, org_id: data?.orgId || data?.order?.organization_id }),
+        body: JSON.stringify({
+          org_id: orgId,
+          order_id: o.id,
+          patch: { status: newStatus },
+        }),
       });
 
       const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j?.ok) throw new Error(j?.error || "No se pudo reembolsar.");
+      if (!res.ok) throw new Error(j?.error || "No se pudo actualizar.");
 
-      showToast?.({ type: "success", text: "Reembolso creado en Stripe." });
+      toast?.({ type: "success", text: "Estado actualizado." });
       onClose();
     } catch (e) {
-      showToast?.({ type: "error", text: e?.message || "Error reembolsando." });
+      toast?.({ type: "error", text: e?.message || "Error actualizando." });
     }
   };
 
@@ -1030,12 +1448,18 @@ function OrderModal({ data, token, role, canWrite, onClose, showToast }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm p-4 flex items-end md:items-center justify-center">
-      <div className="w-full max-w-2xl bg-white rounded-[2rem] border border-slate-200 shadow-2xl overflow-hidden animate-slide-up">
+      <div className="w-full max-w-2xl bg-white rounded-[2rem] border border-slate-200 shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-slate-100 flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-black uppercase tracking-widest text-slate-500">Detalle del pedido</p>
-            <h4 className="text-xl font-black text-slate-900">#{String(o.id || "").split("-")[0].toUpperCase()}</h4>
-            <p className="text-sm font-semibold text-slate-600 mt-1">{o.customer_name || "Sin nombre"} • {o.email || "sin correo"}</p>
+            <p className="text-xs font-black uppercase tracking-widest text-slate-500">
+              Detalle del pedido
+            </p>
+            <h4 className="text-xl font-black text-slate-900">
+              #{String(o.id || "").split("-")[0].toUpperCase()}
+            </h4>
+            <p className="text-sm font-semibold text-slate-600 mt-1">
+              {o.customer_name || "Sin nombre"} • {o.email || "sin correo"}
+            </p>
           </div>
 
           <button onClick={onClose} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200" aria-label="Cerrar">
@@ -1051,7 +1475,9 @@ function OrderModal({ data, token, role, canWrite, onClose, showToast }) {
           </div>
 
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-            <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-2">Resumen</p>
+            <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
+              Resumen
+            </p>
             <p className="text-sm font-semibold text-slate-700">{o.items_summary || "Sin detalle."}</p>
           </div>
 
@@ -1080,26 +1506,48 @@ function OrderModal({ data, token, role, canWrite, onClose, showToast }) {
             />
           </div>
 
-          {canWrite && (
+          {canWrite ? (
             <div className="bg-white border border-slate-200 rounded-2xl p-4">
-              <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">Acciones</p>
+              <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">
+                Acciones rápidas
+              </p>
               <div className="flex flex-wrap gap-2">
-                {canRefund(role) && String(o.status).toLowerCase() === "paid" && (
-                  <button onClick={refund} className="px-3 py-2 rounded-xl bg-rose-600 text-white hover:opacity-90 font-black text-xs flex items-center gap-2">
-                    <BadgeDollarSign size={14} /> Reembolsar
-                  </button>
-                )}
-                <button onClick={onClose} className="px-3 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90 font-black text-xs flex items-center gap-2">
-                  <X size={14} /> Cerrar
+                <button
+                  onClick={() => updateStatus("paid")}
+                  className="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:opacity-90 font-black text-xs flex items-center gap-2"
+                >
+                  <CheckCircle size={14} /> Pagado
+                </button>
+                <button
+                  onClick={() => updateStatus("pending_payment")}
+                  className="px-3 py-2 rounded-xl bg-amber-500 text-white hover:opacity-90 font-black text-xs flex items-center gap-2"
+                >
+                  <AlertTriangle size={14} /> Pendiente
+                </button>
+                <button
+                  onClick={() => updateStatus("payment_failed")}
+                  className="px-3 py-2 rounded-xl bg-rose-600 text-white hover:opacity-90 font-black text-xs flex items-center gap-2"
+                >
+                  <XCircle size={14} /> Fallido
+                </button>
+                <button
+                  onClick={() => updateStatus("fulfilled")}
+                  className="px-3 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90 font-black text-xs flex items-center gap-2"
+                >
+                  <Boxes size={14} /> Fulfilled
                 </button>
               </div>
             </div>
-          )}
+          ) : null}
         </div>
 
         <div className="p-5 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
-          <p className="text-xs font-bold text-slate-500">{o.created_at ? `Creado: ${new Date(o.created_at).toLocaleString("es-MX")}` : ""}</p>
-          <button onClick={onClose} className="px-4 py-2.5 rounded-xl bg-slate-900 text-white font-black text-xs hover:opacity-90">Cerrar</button>
+          <p className="text-xs font-bold text-slate-500">
+            {o.created_at ? `Creado: ${new Date(o.created_at).toLocaleString("es-MX")}` : ""}
+          </p>
+          <button onClick={onClose} className="px-4 py-2.5 rounded-xl bg-slate-900 text-white font-black text-xs hover:opacity-90">
+            Cerrar
+          </button>
         </div>
       </div>
     </div>
@@ -1115,7 +1563,17 @@ function DetailCard({ label, value }) {
   );
 }
 
-function ActionCard({ title, subtitle, primaryLabel, primaryIcon, primaryAction, secondaryLabel, secondaryIcon, secondaryAction, disabled }) {
+function ActionCard({
+  title,
+  subtitle,
+  primaryLabel,
+  primaryIcon,
+  primaryAction,
+  secondaryLabel,
+  secondaryIcon,
+  secondaryAction,
+  disabled,
+}) {
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between gap-3">
       <div>
@@ -1123,10 +1581,18 @@ function ActionCard({ title, subtitle, primaryLabel, primaryIcon, primaryAction,
         <p className="text-xs font-semibold text-slate-500">{subtitle}</p>
       </div>
       <div className="flex gap-2">
-        <button onClick={secondaryAction} disabled={disabled} className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 font-black text-xs flex items-center gap-2 disabled:opacity-50">
+        <button
+          onClick={secondaryAction}
+          disabled={disabled}
+          className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 font-black text-xs flex items-center gap-2 disabled:opacity-50"
+        >
           {secondaryIcon} {secondaryLabel}
         </button>
-        <button onClick={primaryAction} disabled={disabled} className="px-3 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90 font-black text-xs flex items-center gap-2 disabled:opacity-50">
+        <button
+          onClick={primaryAction}
+          disabled={disabled}
+          className="px-3 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90 font-black text-xs flex items-center gap-2 disabled:opacity-50"
+        >
           {primaryIcon} {primaryLabel}
         </button>
       </div>
@@ -1136,66 +1602,103 @@ function ActionCard({ title, subtitle, primaryLabel, primaryIcon, primaryAction,
 
 function StatusPill({ status }) {
   const s = String(status || "").toLowerCase();
-  if (s === "paid") return <span className="bg-emerald-50 text-emerald-700 font-black px-3 py-1 rounded-full text-xs flex items-center gap-1 w-max border border-emerald-100"><CheckCircle size={12} /> Pagado</span>;
-  if (s === "pending_payment" || s === "pending") return <span className="bg-amber-50 text-amber-700 font-black px-3 py-1 rounded-full text-xs flex items-center gap-1 w-max border border-amber-100"><AlertTriangle size={12} /> Pendiente</span>;
-  if (s === "payment_failed") return <span className="bg-rose-50 text-rose-700 font-black px-3 py-1 rounded-full text-xs flex items-center gap-1 w-max border border-rose-100"><XCircle size={12} /> Fallido</span>;
-  if (s === "refunded") return <span className="bg-sky-50 text-sky-700 font-black px-3 py-1 rounded-full text-xs flex items-center gap-1 w-max border border-sky-100"><BadgeDollarSign size={12} /> Reembolsado</span>;
-  return <span className="bg-slate-100 text-slate-700 font-black px-3 py-1 rounded-full text-xs w-max border border-slate-200">{status || "—"}</span>;
+  if (s === "paid")
+    return (
+      <span className="bg-emerald-50 text-emerald-700 font-black px-3 py-1 rounded-full text-xs flex items-center gap-1 w-max border border-emerald-100">
+        <CheckCircle size={12} /> Pagado
+      </span>
+    );
+  if (s === "pending_payment" || s === "pending")
+    return (
+      <span className="bg-amber-50 text-amber-700 font-black px-3 py-1 rounded-full text-xs flex items-center gap-1 w-max border border-amber-100">
+        <AlertTriangle size={12} /> Pendiente
+      </span>
+    );
+  if (s === "payment_failed")
+    return (
+      <span className="bg-rose-50 text-rose-700 font-black px-3 py-1 rounded-full text-xs flex items-center gap-1 w-max border border-rose-100">
+        <XCircle size={12} /> Fallido
+      </span>
+    );
+  if (s === "fulfilled")
+    return (
+      <span className="bg-sky-50 text-sky-700 font-black px-3 py-1 rounded-full text-xs flex items-center gap-1 w-max border border-sky-100">
+        <Boxes size={12} /> Fulfilled
+      </span>
+    );
+  if (s === "cancelled")
+    return (
+      <span className="bg-slate-100 text-slate-700 font-black px-3 py-1 rounded-full text-xs w-max border border-slate-200">
+        Cancelado
+      </span>
+    );
+  return (
+    <span className="bg-slate-100 text-slate-700 font-black px-3 py-1 rounded-full text-xs w-max border border-slate-200">
+      {status || "—"}
+    </span>
+  );
 }
 
 /* =========================================================
-   SHIPPING (Envía)
+   SHIPPING LIST (real from shipping_labels)
    ========================================================= */
-function ShippingView({ orgId, showToast }) {
-  const [rows, setRows] = useState([]);
+function ShippingView({ orgId, toast }) {
   const [busy, setBusy] = useState(true);
+  const [rows, setRows] = useState([]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setBusy(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("shipping_labels")
-        .select("stripe_session_id, tracking_number, label_url, status, updated_at, raw")
+        .select("stripe_session_id, tracking_number, label_url, status, updated_at, raw, carrier")
         .eq("org_id", orgId)
         .order("updated_at", { ascending: false })
-        .limit(60);
+        .limit(80);
 
+      if (error) throw error;
       setRows(data || []);
     } catch (e) {
-      showToast?.({ type: "error", text: "No se pudieron cargar envíos." });
+      console.error(e);
+      toast?.({ type: "error", text: "No se pudieron cargar envíos." });
+      setRows([]);
     } finally {
       setBusy(false);
     }
-  };
+  }, [orgId, toast]);
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId]);
+  }, [load]);
 
   return (
-    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm tech-shadow overflow-hidden">
-      <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+    <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
+      <div className="p-6 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
         <div>
-          <h3 className="font-black text-xl text-slate-900">Envíos</h3>
-          <p className="text-sm font-semibold text-slate-600">Guías generadas por Envía y tracking centralizado.</p>
+          <h4 className="font-black text-xl text-slate-900">Envíos</h4>
+          <p className="text-sm font-semibold text-slate-600">
+            Guías (Envía) con tracking + costo real (raw).
+          </p>
         </div>
-        <button onClick={load} className="px-3 py-2.5 rounded-xl bg-slate-900 text-white font-black text-sm flex items-center gap-2 hover:opacity-90">
+
+        <button
+          onClick={load}
+          className="px-3 py-2.5 rounded-xl bg-slate-900 text-white font-black text-sm flex items-center gap-2 hover:opacity-90"
+        >
           <RefreshCcw size={16} /> Actualizar
         </button>
       </div>
 
-      <div className="overflow-x-auto custom-scrollbar">
-        {busy ? (
-          <div className="p-10 text-center text-slate-500 font-bold">Cargando…</div>
-        ) : rows.length === 0 ? (
-          <div className="p-10 text-center text-slate-500 font-bold">Todavía no hay guías.</div>
-        ) : (
+      {busy ? (
+        <div className="p-10 text-center text-slate-500 font-bold">Cargando…</div>
+      ) : rows.length ? (
+        <div className="overflow-x-auto">
           <table className="w-full text-sm whitespace-nowrap">
             <thead className="bg-slate-50 text-slate-600 uppercase text-[11px] tracking-widest font-black border-b border-slate-200">
               <tr>
                 <th className="p-4 text-left pl-6">Estatus</th>
                 <th className="p-4 text-left">Tracking</th>
+                <th className="p-4 text-left">Carrier</th>
                 <th className="p-4 text-left">Costo</th>
                 <th className="p-4 text-left">Actualizado</th>
                 <th className="p-4 text-right pr-6">Acción</th>
@@ -1204,14 +1707,26 @@ function ShippingView({ orgId, showToast }) {
             <tbody className="divide-y divide-slate-100">
               {rows.map((r) => (
                 <tr key={r.stripe_session_id || r.tracking_number} className="hover:bg-slate-50">
-                  <td className="p-4 pl-6 font-black text-slate-900">{String(r.status || "—").toUpperCase()}</td>
-                  <td className="p-4 font-mono font-black text-sky-700">{r.tracking_number || "—"}</td>
-                  <td className="p-4 font-black text-slate-900">{extractEnviaCost(r.raw) ? moneyMXN(extractEnviaCost(r.raw)) : "—"}</td>
-                  <td className="p-4 text-slate-600 font-semibold">{r.updated_at ? new Date(r.updated_at).toLocaleString("es-MX") : "—"}</td>
+                  <td className="p-4 pl-6 font-black text-slate-900">
+                    {String(r.status || "—").toUpperCase()}
+                  </td>
+                  <td className="p-4 font-mono font-black text-sky-700">
+                    {r.tracking_number || "—"}
+                  </td>
+                  <td className="p-4 font-bold text-slate-700">{r.carrier || "—"}</td>
+                  <td className="p-4 font-black text-slate-900">
+                    {extractEnviaCost(r.raw) ? moneyMXN(extractEnviaCost(r.raw)) : "—"}
+                  </td>
+                  <td className="p-4 text-slate-600 font-semibold">
+                    {r.updated_at ? new Date(r.updated_at).toLocaleString("es-MX") : "—"}
+                  </td>
                   <td className="p-4 pr-6 text-right">
                     {r.label_url ? (
-                      <button onClick={() => window.open(r.label_url, "_blank", "noopener,noreferrer")} className="px-3 py-2 rounded-xl bg-slate-900 text-white font-black text-xs hover:opacity-90 inline-flex items-center gap-2">
-                        <ExternalLink size={14} /> Ver etiqueta
+                      <button
+                        onClick={() => window.open(r.label_url, "_blank", "noopener,noreferrer")}
+                        className="px-3 py-2 rounded-xl bg-slate-900 text-white font-black text-xs hover:opacity-90 inline-flex items-center gap-2"
+                      >
+                        <ExternalLink size={14} /> Etiqueta
                       </button>
                     ) : (
                       <span className="text-xs font-black text-slate-500">Sin etiqueta</span>
@@ -1221,75 +1736,106 @@ function ShippingView({ orgId, showToast }) {
               ))}
             </tbody>
           </table>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="p-10 text-center text-slate-500 font-bold">
+          Todavía no hay guías registradas.
+        </div>
+      )}
     </div>
   );
 }
 
 /* =========================================================
-   PRODUCTS (Supabase)
+   PRODUCTS (CRUD real + optional upload)
    ========================================================= */
-function ProductsView({ orgId, role, showToast }) {
-  const canEdit = ["owner", "admin", "ops"].includes(String(role || "").toLowerCase());
+function ProductsView({ orgId, canWrite, toast }) {
   const [busy, setBusy] = useState(true);
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState("");
-  const [open, setOpen] = useState(false);
+
+  const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setBusy(true);
     try {
       let query = supabase
         .from("products")
         .select("id, name, sku, price_mxn, stock, category, image_url, is_active, created_at")
         .eq("organization_id", orgId)
+        .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(200);
 
-      if (q.trim()) query = query.or(`name.ilike.%${q.trim()}%,sku.ilike.%${q.trim()}%`);
+      if (q.trim()) {
+        const s = q.trim();
+        query = query.or(`name.ilike.%${s}%,sku.ilike.%${s}%`);
+      }
 
-      const { data } = await query;
+      const { data, error } = await query;
+      if (error) throw error;
       setRows(data || []);
     } catch (e) {
-      showToast?.({ type: "error", text: "No se pudieron cargar productos." });
+      console.error(e);
+      toast?.({ type: "error", text: "No se pudieron cargar productos." });
+      setRows([]);
     } finally {
       setBusy(false);
     }
-  };
+  }, [orgId, q, toast]);
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, q]);
+  }, [load]);
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm tech-shadow p-6 flex items-end justify-between gap-3">
+      <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm p-6 flex items-end justify-between gap-3">
         <div>
           <h3 className="font-black text-xl text-slate-900">Productos</h3>
-          <p className="text-sm font-semibold text-slate-600">Inventario y precios (Supabase).</p>
+          <p className="text-sm font-semibold text-slate-600">Inventario real (Supabase).</p>
         </div>
 
         <div className="flex gap-2">
           <div className="relative">
             <Search className="absolute left-3 top-3 text-slate-400" size={18} />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar…" className="pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600 w-[240px]" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Buscar…"
+              className="pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-slate-800 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600 w-[240px]"
+            />
           </div>
-          {canEdit && (
-            <button onClick={() => { setEditing(null); setOpen(true); }} className="px-4 py-2.5 rounded-xl text-white font-black text-sm" style={{ background: "linear-gradient(135deg,#0EA5E9,#14B8A6)" }}>
+
+          {canWrite ? (
+            <button
+              onClick={() => {
+                setEditing(null);
+                setModalOpen(true);
+              }}
+              className="px-4 py-2.5 rounded-xl text-white font-black text-sm"
+              style={{ background: BRAND.grad }}
+            >
               + Nuevo
             </button>
-          )}
+          ) : null}
+
+          <button
+            onClick={load}
+            className="px-3 py-2.5 rounded-xl bg-slate-900 text-white font-black text-sm hover:opacity-90"
+          >
+            <RefreshCcw size={16} className="inline mr-2" />
+            Recargar
+          </button>
         </div>
       </div>
 
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm tech-shadow overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
         {busy ? (
           <div className="p-10 text-center text-slate-500 font-bold">Cargando…</div>
-        ) : (
-          <div className="overflow-x-auto custom-scrollbar">
+        ) : rows.length ? (
+          <div className="overflow-x-auto">
             <table className="w-full text-sm whitespace-nowrap">
               <thead className="bg-slate-50 text-slate-600 uppercase text-[11px] tracking-widest font-black border-b border-slate-200">
                 <tr>
@@ -1307,7 +1853,12 @@ function ProductsView({ orgId, role, showToast }) {
                     <td className="p-4 pl-6">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center">
-                          {p.image_url ? <img src={p.image_url} alt="" className="w-full h-full object-cover" /> : <Package size={18} className="text-slate-400" />}
+                          {p.image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={p.image_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <Package size={18} className="text-slate-400" />
+                          )}
                         </div>
                         <div>
                           <p className="font-black text-slate-900">{p.name}</p>
@@ -1319,11 +1870,25 @@ function ProductsView({ orgId, role, showToast }) {
                     <td className="p-4 font-black text-slate-900">{moneyMXN(p.price_mxn)}</td>
                     <td className="p-4 font-black text-slate-900">{num(p.stock)}</td>
                     <td className="p-4">
-                      {p.is_active ? <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-50 border border-emerald-100 text-emerald-700">Activo</span> : <span className="px-3 py-1 rounded-full text-xs font-black bg-slate-100 border border-slate-200 text-slate-700">Oculto</span>}
+                      {p.is_active ? (
+                        <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-50 border border-emerald-100 text-emerald-700">
+                          Activo
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 rounded-full text-xs font-black bg-slate-100 border border-slate-200 text-slate-700">
+                          Oculto
+                        </span>
+                      )}
                     </td>
                     <td className="p-4 pr-6 text-right">
-                      {canEdit ? (
-                        <button onClick={() => { setEditing(p); setOpen(true); }} className="px-3 py-2 rounded-xl bg-slate-900 text-white font-black text-xs hover:opacity-90">
+                      {canWrite ? (
+                        <button
+                          onClick={() => {
+                            setEditing(p);
+                            setModalOpen(true);
+                          }}
+                          className="px-3 py-2 rounded-xl bg-slate-900 text-white font-black text-xs hover:opacity-90"
+                        >
                           Editar
                         </button>
                       ) : (
@@ -1332,37 +1897,74 @@ function ProductsView({ orgId, role, showToast }) {
                     </td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={6} className="p-10 text-center text-slate-500 font-bold">Sin productos.</td></tr>}
               </tbody>
             </table>
           </div>
+        ) : (
+          <div className="p-10 text-center text-slate-500 font-bold">Sin productos.</div>
         )}
       </div>
 
-      {open && (
+      {modalOpen ? (
         <ProductModal
           orgId={orgId}
           editing={editing}
-          onClose={() => setOpen(false)}
-          onDone={() => { setOpen(false); load(); }}
-          showToast={showToast}
+          onClose={() => setModalOpen(false)}
+          onDone={() => {
+            setModalOpen(false);
+            load();
+          }}
+          toast={toast}
         />
-      )}
+      ) : null}
     </div>
   );
 }
 
-function ProductModal({ orgId, editing, onClose, onDone, showToast }) {
+function ProductModal({ orgId, editing, onClose, onDone, toast }) {
   const [busy, setBusy] = useState(false);
+  const [uploadBusy, setUploadBusy] = useState(false);
+
   const [form, setForm] = useState({
     name: editing?.name || "",
     sku: editing?.sku || "",
-    price_mxn: editing?.price_mxn || 0,
-    stock: editing?.stock || 0,
+    price_mxn: Number(editing?.price_mxn || 0),
+    stock: Number(editing?.stock || 0),
     category: editing?.category || "BAJA_1000",
     is_active: editing?.is_active ?? true,
     image_url: editing?.image_url || "",
   });
+
+  const uploadImage = async (file) => {
+    if (!file) return;
+    setUploadBusy(true);
+
+    try {
+      const ext = (file.name.split(".").pop() || "png").toLowerCase();
+      const safeExt = ["png", "jpg", "jpeg", "webp"].includes(ext) ? ext : "png";
+      const id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+      const path = `${orgId}/${id}.${safeExt}`;
+
+      const { error: upErr } = await supabase.storage.from("products").upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+        contentType: file.type || undefined,
+      });
+
+      if (upErr) throw upErr;
+
+      const { data } = supabase.storage.from("products").getPublicUrl(path);
+      const url = data?.publicUrl || "";
+      if (!url) throw new Error("No se pudo obtener URL pública.");
+
+      setForm((f) => ({ ...f, image_url: url }));
+      toast?.({ type: "success", text: "Imagen cargada." });
+    } catch (e) {
+      toast?.({ type: "error", text: e?.message || "Error subiendo imagen." });
+    } finally {
+      setUploadBusy(false);
+    }
+  };
 
   const save = async () => {
     setBusy(true);
@@ -1381,17 +1983,22 @@ function ProductModal({ orgId, editing, onClose, onDone, showToast }) {
       if (!payload.name) throw new Error("Nombre requerido.");
 
       if (editing?.id) {
-        const { error } = await supabase.from("products").update(payload).eq("id", editing.id).eq("organization_id", orgId);
+        const { error } = await supabase
+          .from("products")
+          .update(payload)
+          .eq("organization_id", orgId)
+          .eq("id", editing.id);
+
         if (error) throw error;
       } else {
         const { error } = await supabase.from("products").insert(payload);
         if (error) throw error;
       }
 
-      showToast?.({ type: "success", text: "Producto guardado." });
+      toast?.({ type: "success", text: "Producto guardado." });
       onDone?.();
     } catch (e) {
-      showToast?.({ type: "error", text: e?.message || "Error guardando." });
+      toast?.({ type: "error", text: e?.message || "Error guardando." });
     } finally {
       setBusy(false);
     }
@@ -1399,54 +2006,123 @@ function ProductModal({ orgId, editing, onClose, onDone, showToast }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm p-4 flex items-end md:items-center justify-center">
-      <div className="w-full max-w-xl bg-white rounded-[2rem] border border-slate-200 shadow-2xl overflow-hidden animate-slide-up">
+      <div className="w-full max-w-xl bg-white rounded-[2rem] border border-slate-200 shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between">
           <div>
-            <p className="text-xs font-black uppercase tracking-widest text-slate-500">{editing ? "Editar producto" : "Nuevo producto"}</p>
+            <p className="text-xs font-black uppercase tracking-widest text-slate-500">
+              {editing ? "Editar producto" : "Nuevo producto"}
+            </p>
             <h4 className="text-xl font-black text-slate-900">{editing ? editing.name : "Crear"}</h4>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200"><X size={18} /></button>
+          <button onClick={onClose} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200" aria-label="Cerrar">
+            <X size={18} />
+          </button>
         </div>
 
         <div className="p-6 space-y-4">
           <div>
             <label className="text-xs font-black uppercase tracking-widest text-slate-500">Nombre</label>
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800" />
+            <input
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800"
+            />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-black uppercase tracking-widest text-slate-500">SKU</label>
-              <input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800" />
+              <input
+                value={form.sku}
+                onChange={(e) => setForm((f) => ({ ...f, sku: e.target.value }))}
+                className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800"
+              />
             </div>
             <div>
               <label className="text-xs font-black uppercase tracking-widest text-slate-500">Categoría</label>
-              <input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800" />
+              <input
+                value={form.category}
+                onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
+                className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800"
+              />
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-black uppercase tracking-widest text-slate-500">Precio (MXN)</label>
-              <input type="number" value={form.price_mxn} onChange={(e) => setForm({ ...form, price_mxn: e.target.value })} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800" />
+              <input
+                type="number"
+                value={form.price_mxn}
+                onChange={(e) => setForm((f) => ({ ...f, price_mxn: e.target.value }))}
+                className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800"
+              />
             </div>
             <div>
               <label className="text-xs font-black uppercase tracking-widest text-slate-500">Stock</label>
-              <input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800" />
+              <input
+                type="number"
+                value={form.stock}
+                onChange={(e) => setForm((f) => ({ ...f, stock: e.target.value }))}
+                className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800"
+              />
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-black uppercase tracking-widest text-slate-500">Imagen (URL)</label>
-            <input value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800" placeholder="https://..." />
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+            <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-2">
+              Imagen
+            </p>
+
+            <div className="flex flex-col md:flex-row gap-3 md:items-center">
+              <input
+                value={form.image_url}
+                onChange={(e) => setForm((f) => ({ ...f, image_url: e.target.value }))}
+                placeholder="URL (opcional) o sube un archivo…"
+                className="flex-1 border-2 border-slate-100 bg-white p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800"
+              />
+
+              <label className="px-4 py-3 rounded-xl bg-slate-900 text-white font-black text-xs cursor-pointer hover:opacity-90 inline-flex items-center justify-center">
+                {uploadBusy ? "SUBIENDO…" : "SUBIR"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={(e) => uploadImage(e.target.files?.[0] || null)}
+                  disabled={uploadBusy}
+                />
+              </label>
+            </div>
+
+            {form.image_url ? (
+              <div className="mt-3 flex items-center gap-3">
+                <div className="w-16 h-16 rounded-xl border border-slate-200 bg-white overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={form.image_url} alt="" className="w-full h-full object-cover" />
+                </div>
+                <p className="text-xs font-semibold text-slate-600">
+                  Vista previa cargada.
+                </p>
+              </div>
+            ) : null}
           </div>
 
           <label className="flex items-center gap-3">
-            <input type="checkbox" checked={!!form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} className="w-5 h-5 accent-sky-600" />
+            <input
+              type="checkbox"
+              checked={!!form.is_active}
+              onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
+              className="w-5 h-5 accent-sky-600"
+            />
             <span className="font-black text-slate-800">Producto activo</span>
           </label>
 
-          <button disabled={busy} onClick={save} className="w-full py-4 rounded-xl text-white font-black disabled:opacity-50" style={{ background: "linear-gradient(135deg,#0EA5E9,#14B8A6)" }}>
+          <button
+            disabled={busy}
+            onClick={save}
+            className="w-full py-4 rounded-xl text-white font-black disabled:opacity-60"
+            style={{ background: BRAND.grad }}
+          >
             {busy ? "GUARDANDO…" : "GUARDAR"}
           </button>
         </div>
@@ -1456,24 +2132,33 @@ function ProductModal({ orgId, editing, onClose, onDone, showToast }) {
 }
 
 /* =========================================================
-   CRM
+   CRM (LTV)
    ========================================================= */
 function CRMView({ orgId }) {
-  const [customers, setCustomers] = useState([]);
   const [busy, setBusy] = useState(true);
+  const [customers, setCustomers] = useState([]);
 
   useEffect(() => {
     setBusy(true);
     supabase
       .from("orders")
-      .select("email, customer_name, phone, amount_total_mxn, created_at")
+      .select("email, customer_name, phone, amount_total_mxn, created_at, status")
       .eq("organization_id", orgId)
       .eq("status", "paid")
+      .limit(800)
       .then(({ data }) => {
         const map = {};
         (data || []).forEach((o) => {
           if (!o.email) return;
-          if (!map[o.email]) map[o.email] = { email: o.email, name: o.customer_name, phone: o.phone, ltv: 0, orders: 0, last: o.created_at };
+          if (!map[o.email])
+            map[o.email] = {
+              email: o.email,
+              name: o.customer_name || o.email,
+              phone: o.phone || "",
+              ltv: 0,
+              orders: 0,
+              last: o.created_at,
+            };
           map[o.email].ltv += Number(o.amount_total_mxn || 0);
           map[o.email].orders += 1;
           if (new Date(o.created_at) > new Date(map[o.email].last)) map[o.email].last = o.created_at;
@@ -1485,31 +2170,51 @@ function CRMView({ orgId }) {
   }, [orgId]);
 
   return (
-    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden tech-shadow animate-slide-up">
+    <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
       <div className="p-6 border-b border-slate-100 bg-slate-50/70">
-        <h3 className="font-black text-xl text-slate-900">Clientes (LTV)</h3>
-        <p className="text-sm font-semibold text-slate-600">Ranking por valor total de compra.</p>
+        <h3 className="font-black text-xl text-slate-900">Clientes</h3>
+        <p className="text-sm font-semibold text-slate-600">LTV (valor total) por correo.</p>
       </div>
 
-      <div className="overflow-x-auto custom-scrollbar">
-        <table className="w-full text-left text-sm whitespace-nowrap">
-          <thead className="bg-slate-50 text-slate-600 font-black border-b border-slate-200 text-[11px] uppercase tracking-widest">
-            <tr><th className="px-6 py-4">Cliente</th><th className="px-6 py-4">Compras</th><th className="px-6 py-4">Última</th><th className="px-6 py-4 text-right">LTV</th></tr>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm whitespace-nowrap">
+          <thead className="bg-slate-50 text-slate-600 uppercase text-[11px] tracking-widest font-black border-b border-slate-200">
+            <tr>
+              <th className="px-6 py-4">Cliente</th>
+              <th className="px-6 py-4">Compras</th>
+              <th className="px-6 py-4">Última</th>
+              <th className="px-6 py-4 text-right">LTV</th>
+            </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {busy ? (
-              <tr><td colSpan={4} className="px-6 py-10 text-slate-500 font-bold">Cargando…</td></tr>
+              <tr>
+                <td colSpan={4} className="px-6 py-10 text-slate-500 font-bold">
+                  Cargando…
+                </td>
+              </tr>
             ) : customers.length ? (
               customers.map((c) => (
                 <tr key={c.email} className="hover:bg-slate-50">
-                  <td className="px-6 py-4"><p className="font-black text-slate-900">{c.name || "—"}</p><p className="text-xs font-semibold text-slate-500">{c.email} {c.phone ? `• ${c.phone}` : ""}</p></td>
-                  <td className="px-6 py-4 font-black text-slate-700">{c.orders} pedidos</td>
-                  <td className="px-6 py-4 font-semibold text-slate-600">{c.last ? new Date(c.last).toLocaleDateString("es-MX") : "—"}</td>
+                  <td className="px-6 py-4">
+                    <p className="font-black text-slate-900">{c.name}</p>
+                    <p className="text-xs font-semibold text-slate-500">
+                      {c.email} {c.phone ? `• ${c.phone}` : ""}
+                    </p>
+                  </td>
+                  <td className="px-6 py-4 font-black text-slate-700">{c.orders}</td>
+                  <td className="px-6 py-4 font-semibold text-slate-600">
+                    {c.last ? new Date(c.last).toLocaleDateString("es-MX") : "—"}
+                  </td>
                   <td className="px-6 py-4 font-black text-sky-700 text-right">{moneyMXN(c.ltv)}</td>
                 </tr>
               ))
             ) : (
-              <tr><td colSpan={4} className="text-center p-10 text-slate-500 font-bold">Sin clientes.</td></tr>
+              <tr>
+                <td colSpan={4} className="p-10 text-center text-slate-500 font-bold">
+                  Sin clientes todavía.
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
@@ -1519,11 +2224,11 @@ function CRMView({ orgId }) {
 }
 
 /* =========================================================
-   MARKETING
+   MARKETING (site_settings: promo + pixel)
    ========================================================= */
-function MarketingView({ orgId, showToast }) {
-  const [cfg, setCfg] = useState({ promo_active: false, promo_text: "", pixel_id: "" });
+function MarketingView({ orgId, toast }) {
   const [busy, setBusy] = useState(true);
+  const [cfg, setCfg] = useState({ promo_active: false, promo_text: "", pixel_id: "" });
 
   useEffect(() => {
     setBusy(true);
@@ -1533,7 +2238,13 @@ function MarketingView({ orgId, showToast }) {
       .eq("organization_id", orgId)
       .single()
       .then(({ data }) => {
-        if (data) setCfg({ promo_active: !!data.promo_active, promo_text: data.promo_text || "", pixel_id: data.pixel_id || "" });
+        if (data) {
+          setCfg({
+            promo_active: !!data.promo_active,
+            promo_text: data.promo_text || "",
+            pixel_id: data.pixel_id || "",
+          });
+        }
         setBusy(false);
       })
       .catch(() => setBusy(false));
@@ -1544,39 +2255,66 @@ function MarketingView({ orgId, showToast }) {
       const payload = {
         organization_id: orgId,
         promo_active: !!cfg.promo_active,
-        promo_text: String(cfg.promo_text || ""),
+        promo_text: String(cfg.promo_text || "") || null,
         pixel_id: String(cfg.pixel_id || "") || null,
         updated_at: new Date().toISOString(),
       };
 
-      // upsert (si no existe, se crea)
-      const { error } = await supabase.from("site_settings").upsert(payload, { onConflict: "organization_id" });
-      if (error) throw error;
+      const { error } = await supabase.from("site_settings").upsert(payload, {
+        onConflict: "organization_id",
+      });
 
-      showToast?.({ type: "success", text: "Marketing guardado." });
-    } catch {
-      showToast?.({ type: "error", text: "No se pudo guardar." });
+      if (error) throw error;
+      toast?.({ type: "success", text: "Marketing guardado." });
+    } catch (e) {
+      toast?.({ type: "error", text: e?.message || "No se pudo guardar." });
     }
   };
 
   return (
-    <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm tech-shadow max-w-xl animate-slide-up">
+    <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm p-8 max-w-xl">
       <h3 className="font-black text-xl text-slate-900 mb-2">Marketing</h3>
-      <p className="text-sm font-semibold text-slate-600">Banner superior + Pixel.</p>
+      <p className="text-sm font-semibold text-slate-600">Cintillo + Pixel.</p>
 
       <div className="mt-6 flex items-center gap-3">
-        <input type="checkbox" checked={cfg.promo_active || false} onChange={(e) => setCfg({ ...cfg, promo_active: e.target.checked })} className="w-5 h-5 accent-sky-600" disabled={busy} />
+        <input
+          type="checkbox"
+          checked={!!cfg.promo_active}
+          onChange={(e) => setCfg((c) => ({ ...c, promo_active: e.target.checked }))}
+          className="w-5 h-5 accent-sky-600"
+          disabled={busy}
+        />
         <span className="font-black text-slate-800">Activar banner</span>
       </div>
 
-      <textarea value={cfg.promo_text || ""} onChange={(e) => setCfg({ ...cfg, promo_text: e.target.value })} className="mt-4 w-full border-2 border-slate-100 rounded-xl p-4 font-bold text-slate-800 outline-none focus:border-sky-600 bg-slate-50" placeholder="Ej. ENVÍO GRATIS A TODO MÉXICO" rows={3} disabled={busy} />
+      <textarea
+        value={cfg.promo_text}
+        onChange={(e) => setCfg((c) => ({ ...c, promo_text: e.target.value }))}
+        className="mt-4 w-full border-2 border-slate-100 rounded-xl p-4 font-bold text-slate-800 outline-none focus:border-sky-600 bg-slate-50"
+        placeholder="Ej. ENVÍO GRATIS A TODO MÉXICO"
+        rows={3}
+        disabled={busy}
+      />
 
       <div className="mt-4">
-        <label className="text-xs font-black uppercase tracking-widest text-slate-500">Pixel ID</label>
-        <input value={cfg.pixel_id || ""} onChange={(e) => setCfg({ ...cfg, pixel_id: e.target.value })} className="mt-1 w-full border-2 border-slate-100 rounded-xl p-3 font-bold text-slate-800 outline-none focus:border-sky-600 bg-slate-50" placeholder="Meta Pixel ID" disabled={busy} />
+        <label className="text-xs font-black uppercase tracking-widest text-slate-500">
+          Pixel ID
+        </label>
+        <input
+          value={cfg.pixel_id}
+          onChange={(e) => setCfg((c) => ({ ...c, pixel_id: e.target.value }))}
+          className="mt-1 w-full border-2 border-slate-100 rounded-xl p-3 font-bold text-slate-800 outline-none focus:border-sky-600 bg-slate-50"
+          placeholder="Meta Pixel ID"
+          disabled={busy}
+        />
       </div>
 
-      <button onClick={save} className="mt-5 w-full text-white font-black py-4 rounded-xl transition-colors disabled:opacity-50" style={{ background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" }} disabled={busy}>
+      <button
+        onClick={save}
+        disabled={busy}
+        className="mt-5 w-full py-4 rounded-xl text-white font-black disabled:opacity-60"
+        style={{ background: BRAND.grad }}
+      >
         Publicar
       </button>
     </div>
@@ -1584,87 +2322,131 @@ function MarketingView({ orgId, showToast }) {
 }
 
 /* =========================================================
-   USERS
+   USERS (list + invite)
    ========================================================= */
-function UsersView({ orgId, token, role, showToast }) {
-  const [members, setMembers] = useState([]);
+function UsersView({ orgId, token, role, canInvite, toast }) {
   const [busy, setBusy] = useState(true);
+  const [rows, setRows] = useState([]);
   const [inviteOpen, setInviteOpen] = useState(false);
 
-  const canInvite = canManageUsers(role);
-
-  const load = async () => {
+  const load = useCallback(async () => {
     setBusy(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("admin_users")
         .select("id, email, role, is_active, created_at")
         .eq("organization_id", orgId)
         .order("created_at", { ascending: false });
 
-      setMembers(data || []);
+      if (error) throw error;
+      setRows(data || []);
+    } catch (e) {
+      // RLS: si no eres owner/admin, puede bloquear ver la lista completa
+      setRows([]);
     } finally {
       setBusy(false);
     }
-  };
+  }, [orgId]);
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [orgId]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
-    <div className="space-y-4 animate-slide-up">
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 tech-shadow flex items-start justify-between gap-4">
+    <div className="space-y-4">
+      <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm p-6 flex items-start justify-between gap-4">
         <div>
           <h3 className="font-black text-xl text-slate-900">Equipo</h3>
-          <p className="text-sm font-semibold text-slate-600">Usuarios y roles por organización.</p>
+          <p className="text-sm font-semibold text-slate-600">Accesos por organización.</p>
         </div>
 
-        {canInvite && (
-          <button onClick={() => setInviteOpen(true)} className="px-4 py-2.5 rounded-xl text-white font-black text-sm flex items-center gap-2" style={{ background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" }}>
+        {canInvite ? (
+          <button
+            onClick={() => setInviteOpen(true)}
+            className="px-4 py-2.5 rounded-xl text-white font-black text-sm flex items-center gap-2"
+            style={{ background: BRAND.grad }}
+          >
             <Users size={16} /> Invitar
           </button>
+        ) : (
+          <span className="text-xs font-black text-slate-500 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl">
+            Solo owner/admin invita
+          </span>
         )}
       </div>
 
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm tech-shadow overflow-hidden">
-        <div className="overflow-x-auto custom-scrollbar">
+      <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-slate-50 text-slate-600 font-black border-b border-slate-200 text-[11px] uppercase tracking-widest">
-              <tr><th className="px-6 py-4">Correo</th><th className="px-6 py-4">Rol</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4">Creado</th></tr>
+              <tr>
+                <th className="px-6 py-4">Correo</th>
+                <th className="px-6 py-4">Rol</th>
+                <th className="px-6 py-4">Estado</th>
+                <th className="px-6 py-4">Creado</th>
+              </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {busy ? (
-                <tr><td colSpan={4} className="px-6 py-10 text-slate-500 font-bold">Cargando…</td></tr>
-              ) : members.length ? (
-                members.map((m) => (
+                <tr>
+                  <td colSpan={4} className="px-6 py-10 text-slate-500 font-bold">
+                    Cargando…
+                  </td>
+                </tr>
+              ) : rows.length ? (
+                rows.map((m) => (
                   <tr key={m.id} className="hover:bg-slate-50">
                     <td className="px-6 py-4 font-black text-slate-900">{m.email}</td>
-                    <td className="px-6 py-4"><span className="px-3 py-1 rounded-full text-xs font-black bg-slate-100 border border-slate-200 text-slate-700">{m.role}</span></td>
-                    <td className="px-6 py-4">{m.is_active ? <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-50 border border-emerald-100 text-emerald-700">Activo</span> : <span className="px-3 py-1 rounded-full text-xs font-black bg-rose-50 border border-rose-100 text-rose-700">Inactivo</span>}</td>
-                    <td className="px-6 py-4 font-semibold text-slate-600">{m.created_at ? new Date(m.created_at).toLocaleDateString("es-MX") : "—"}</td>
+                    <td className="px-6 py-4">
+                      <span className="px-3 py-1 rounded-full text-xs font-black bg-slate-100 border border-slate-200 text-slate-700">
+                        {m.role}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {m.is_active ? (
+                        <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-50 border border-emerald-100 text-emerald-700">
+                          Activo
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 rounded-full text-xs font-black bg-rose-50 border border-rose-100 text-rose-700">
+                          Inactivo
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 font-semibold text-slate-600">
+                      {m.created_at ? new Date(m.created_at).toLocaleDateString("es-MX") : "—"}
+                    </td>
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan={4} className="text-center p-10 text-slate-500 font-bold">Sin usuarios.</td></tr>
+                <tr>
+                  <td colSpan={4} className="p-10 text-center text-slate-500 font-bold">
+                    Si no eres owner/admin, Supabase puede ocultar la lista completa por seguridad.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {inviteOpen && (
+      {inviteOpen ? (
         <InviteModal
           orgId={orgId}
           token={token}
           onClose={() => setInviteOpen(false)}
-          onDone={() => { setInviteOpen(false); load(); }}
-          showToast={showToast}
+          onDone={() => {
+            setInviteOpen(false);
+            load();
+          }}
+          toast={toast}
         />
-      )}
+      ) : null}
     </div>
   );
 }
 
-function InviteModal({ orgId, token, onClose, onDone, showToast }) {
+function InviteModal({ orgId, token, onClose, onDone, toast }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("staff");
   const [busy, setBusy] = useState(false);
@@ -1677,13 +2459,14 @@ function InviteModal({ orgId, token, onClose, onDone, showToast }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ organization_id: orgId, email: normEmail(email), role }),
       });
+
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error || "No se pudo invitar.");
 
-      showToast?.({ type: "success", text: "Invitación enviada." });
+      toast?.({ type: "success", text: "Invitación enviada." });
       onDone?.();
     } catch (e) {
-      showToast?.({ type: "error", text: e?.message || "Error al invitar." });
+      toast?.({ type: "error", text: e?.message || "Error al invitar." });
     } finally {
       setBusy(false);
     }
@@ -1691,24 +2474,35 @@ function InviteModal({ orgId, token, onClose, onDone, showToast }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm p-4 flex items-end md:items-center justify-center">
-      <div className="w-full max-w-lg bg-white rounded-[2rem] border border-slate-200 shadow-2xl overflow-hidden animate-slide-up">
+      <div className="w-full max-w-lg bg-white rounded-[2rem] border border-slate-200 shadow-2xl overflow-hidden">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-widest text-slate-500">Invitar usuario</p>
             <h4 className="text-xl font-black text-slate-900">Acceso al panel</h4>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200"><X size={18} /></button>
+          <button onClick={onClose} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200" aria-label="Cerrar">
+            <X size={18} />
+          </button>
         </div>
 
         <div className="p-6 space-y-4">
           <div>
             <label className="text-xs font-black uppercase tracking-widest text-slate-500">Correo</label>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="persona@empresa.com" className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 focus:ring-4 focus:ring-sky-600/10 transition-all font-bold text-slate-800" />
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="persona@empresa.com"
+              className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-bold text-slate-800"
+            />
           </div>
 
           <div>
             <label className="text-xs font-black uppercase tracking-widest text-slate-500">Rol</label>
-            <select value={role} onChange={(e) => setRole(e.target.value)} className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 focus:ring-4 focus:ring-sky-600/10 transition-all font-black text-slate-800">
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="mt-1 w-full border-2 border-slate-100 bg-slate-50 p-3 rounded-xl outline-none focus:border-sky-600 font-black text-slate-800"
+            >
               <option value="owner">Owner</option>
               <option value="admin">Admin</option>
               <option value="ops">Ops</option>
@@ -1719,7 +2513,12 @@ function InviteModal({ orgId, token, onClose, onDone, showToast }) {
             </select>
           </div>
 
-          <button onClick={send} disabled={busy || !email.trim()} className="w-full py-4 rounded-xl text-white font-black disabled:opacity-50" style={{ background: "linear-gradient(135deg,#0EA5E9,#14B8A6)" }}>
+          <button
+            onClick={send}
+            disabled={busy || !email.trim()}
+            className="w-full py-4 rounded-xl text-white font-black disabled:opacity-60"
+            style={{ background: BRAND.grad }}
+          >
             {busy ? "ENVIANDO…" : "ENVIAR INVITACIÓN"}
           </button>
         </div>
@@ -1729,37 +2528,46 @@ function InviteModal({ orgId, token, onClose, onDone, showToast }) {
 }
 
 /* =========================================================
-   INTEGRATIONS
+   INTEGRATIONS (health check real)
    ========================================================= */
-function IntegrationsView({ token, showToast }) {
+function IntegrationsView({ token, toast }) {
   const [busy, setBusy] = useState(true);
   const [env, setEnv] = useState(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setBusy(true);
     try {
-      const res = await fetch("/api/health", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch("/api/health", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error || "No se pudo consultar salud.");
       setEnv(j?.env || null);
     } catch (e) {
       setEnv(null);
-      showToast?.({ type: "error", text: "No se pudo leer estado." });
+      toast?.({ type: "error", text: "No se pudo leer estado." });
     } finally {
       setBusy(false);
     }
-  };
+  }, [token, toast]);
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
-    <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6 tech-shadow">
+    <div className="bg-white border border-slate-200 rounded-[2rem] shadow-sm p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="font-black text-xl text-slate-900 mb-1">Integraciones</h3>
-          <p className="text-sm font-semibold text-slate-600">Checklist real de producción (variables del servidor).</p>
+          <p className="text-sm font-semibold text-slate-600">
+            Checklist real (variables del servidor).
+          </p>
         </div>
-        <button onClick={load} className="px-3 py-2.5 rounded-xl bg-slate-900 text-white font-black text-sm flex items-center gap-2 hover:opacity-90">
+        <button
+          onClick={load}
+          className="px-3 py-2.5 rounded-xl bg-slate-900 text-white font-black text-sm flex items-center gap-2 hover:opacity-90"
+        >
           <RefreshCcw size={16} /> Actualizar
         </button>
       </div>
@@ -1773,7 +2581,9 @@ function IntegrationsView({ token, showToast }) {
         <EnvCard label="FX USD→MXN" ok={!!env?.FX_USD_TO_MXN} />
       </div>
 
-      {busy && <p className="mt-4 text-sm font-bold text-slate-500">Cargando estado…</p>}
+      {busy ? (
+        <p className="mt-4 text-sm font-bold text-slate-500">Cargando estado…</p>
+      ) : null}
     </div>
   );
 }
@@ -1785,7 +2595,14 @@ function EnvCard({ label, ok }) {
         <p className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</p>
         <p className="text-sm font-black text-slate-900 mt-1">{ok ? "CONFIGURADO" : "FALTA"}</p>
       </div>
-      <div className={clsx("w-10 h-10 rounded-2xl flex items-center justify-center border", ok ? "bg-emerald-50 border-emerald-100 text-emerald-700" : "bg-rose-50 border-rose-100 text-rose-700")}>
+      <div
+        className={clsx(
+          "w-10 h-10 rounded-2xl flex items-center justify-center border",
+          ok
+            ? "bg-emerald-50 border-emerald-100 text-emerald-700"
+            : "bg-rose-50 border-rose-100 text-rose-700"
+        )}
+      >
         {ok ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
       </div>
     </div>
@@ -1793,127 +2610,23 @@ function EnvCard({ label, ok }) {
 }
 
 /* =========================================================
-   AI SIDEKICK (accesible desde cualquier pantalla)
+   EMPTY STATE
    ========================================================= */
-function AISidekick({ orgId, token, onClose }) {
-  const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [messages, setMessages] = useState([{ role: "assistant", content: "Listo. Dime qué necesitas y lo hago." }]);
-  const bottomRef = useRef(null);
-
-  useEffect(() => { bottomRef.current?.scrollIntoView?.({ behavior: "smooth" }); }, [messages]);
-
-  const send = async () => {
-    const q = input.trim();
-    if (!q) return;
-
-    setInput("");
-    setSending(true);
-    setMessages((m) => [...m, { role: "user", content: q }]);
-
-    try {
-      const res = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ message: q, organization_id: orgId }),
-      });
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json?.error || "Error IA");
-
-      setMessages((m) => [...m, { role: "assistant", content: json?.reply || "OK" }]);
-    } catch (e) {
-      setMessages((m) => [...m, { role: "assistant", content: "Error: " + String(e?.message || e) }]);
-    } finally {
-      setSending(false);
-    }
-  };
-
+function EmptyState({ title, desc, actionLabel, onAction }) {
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm p-4 flex items-end md:items-center justify-center">
-      <div className="w-full max-w-2xl bg-white rounded-[2rem] border border-slate-200 shadow-2xl overflow-hidden animate-slide-up">
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-white" style={{ background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" }}>
-              <Bot size={18} />
-            </div>
-            <div>
-              <p className="font-black text-slate-900">Unico IA</p>
-              <p className="text-xs font-semibold text-slate-500">Asistente operativo</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200"><X size={18} /></button>
-        </div>
-
-        <div className="p-5 h-[55vh] md:h-[60vh] overflow-y-auto space-y-3 custom-scrollbar">
-          {messages.map((m, idx) => (
-            <div
-              key={idx}
-              className={clsx(
-                "max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-relaxed font-semibold",
-                m.role === "assistant" ? "bg-slate-50 border border-slate-200 text-slate-800" : "text-white ml-auto"
-              )}
-              style={m.role === "user" ? { background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" } : undefined}
-            >
-              {m.content}
-            </div>
-          ))}
-          <div ref={bottomRef} />
-        </div>
-
-        <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && send()}
-            className="flex-1 bg-white border border-slate-200 text-slate-800 font-bold px-4 py-3 rounded-xl outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
-            placeholder="Escribe una instrucción…"
-            disabled={sending}
-          />
-          <button onClick={send} disabled={sending || !input.trim()} className="px-5 py-3 rounded-xl text-white font-black flex items-center gap-2 disabled:opacity-50" style={{ background: "linear-gradient(135deg, #0EA5E9, #14B8A6)" }}>
-            <Send size={16} /> {sending ? "Enviando" : "Enviar"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* =========================================================
-   UI UTILITIES
-   ========================================================= */
-function Toast({ t }) {
-  const tone = t?.type === "success" ? "bg-emerald-600" : t?.type === "error" ? "bg-rose-600" : "bg-slate-900";
-  return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60]">
-      <div className={clsx("px-5 py-3 rounded-2xl text-white font-black shadow-2xl", tone)}>{t?.text || ""}</div>
-    </div>
-  );
-}
-
-function LoadingScreen() {
-  return (
-    <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50">
-      <div className="h-16 w-16 rounded-2xl animate-pulse flex items-center justify-center shadow-[0_0_40px_rgba(14,165,233,0.25)] mb-6 overflow-hidden bg-white border border-slate-200">
-        <Image src={BRAND_ICON} alt="UnicOs" width={64} height={64} className="object-contain p-2" />
-      </div>
-      <p className="text-xs font-bold tracking-widest text-slate-500 uppercase">Estableciendo conexión…</p>
-    </div>
-  );
-}
-
-function EmptyStateMultiTenant({ onExit }) {
-  return (
-    <div className="h-screen w-full flex items-center justify-center bg-slate-50 p-6">
-      <div className="max-w-md w-full bg-white border border-slate-200 rounded-[2rem] shadow-2xl p-8 text-center tech-shadow animate-slide-up">
+    <div className="min-h-screen w-full flex items-center justify-center p-6 bg-slate-50">
+      <div className="max-w-md w-full bg-white border border-slate-200 rounded-[2rem] shadow-2xl p-8 text-center">
         <div className="mx-auto h-16 w-16 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mb-6">
           <Shield size={32} />
         </div>
-        <h2 className="text-xl font-black text-slate-900 mb-2">Acceso restringido</h2>
-        <p className="text-sm text-slate-500 font-medium leading-relaxed mb-6">
-          Tu cuenta existe, pero no está vinculada a ninguna organización con acceso admin.
-        </p>
-        <button onClick={onExit} className="text-sm font-bold text-slate-900 hover:text-sky-700 underline">Volver</button>
+        <h2 className="text-xl font-black text-slate-900 mb-2">{title}</h2>
+        <p className="text-sm text-slate-500 font-semibold leading-relaxed mb-6">{desc}</p>
+        <button
+          onClick={onAction}
+          className="px-5 py-3 rounded-xl bg-slate-900 text-white font-black hover:opacity-90"
+        >
+          {actionLabel}
+        </button>
       </div>
     </div>
   );
