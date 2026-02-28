@@ -24,26 +24,15 @@ export async function GET(req) {
       {
         ok: true,
         env: {
-          // Supabase
-          SUPABASE_URL: Boolean(process.env.SUPABASE_URL),
-          SUPABASE_SECRET_KEY: Boolean(
-            process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
-          ),
+          SUPABASE_URL: Boolean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL),
+          SUPABASE_SECRET_KEY: Boolean(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
 
-          // IA
           GEMINI_API_KEY: Boolean(process.env.GEMINI_API_KEY),
           GEMINI_MODEL: Boolean(process.env.GEMINI_MODEL),
 
-          // Stripe (fees reales)
-          STRIPE_SECRET_KEY: Boolean(
-            process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY || process.env.STRIPE_SK
-          ),
-
-          // Envía (solo flag aquí; Score Store lo usa en Netlify Functions)
+          STRIPE_SECRET_KEY: Boolean(process.env.STRIPE_SECRET_KEY),
           ENVIA_API_KEY: Boolean(process.env.ENVIA_API_KEY),
-
-          // FX para convertir fees USD→MXN cuando aplique
-          FX_USD_TO_MXN: Boolean(process.env.FX_USD_TO_MXN || process.env.USD_TO_MXN),
+          FX_USD_TO_MXN: Boolean(process.env.FX_USD_TO_MXN),
         },
       },
       { status: 200 }
