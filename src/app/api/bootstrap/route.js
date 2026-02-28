@@ -16,14 +16,14 @@ function getBearerToken(req) {
 
 const normEmail = (s) => String(s || "").trim().toLowerCase();
 
+// IDs fijos multi-tenant (Score Store + Único Uniformes)
+const SCORE_ORG_ID = "1f3b9980-a1c5-4557-b4eb-a75bb9a8aaa6";
+const UNICO_ORG_ID = "8a8c2f32-0d8f-4b33-9cbe-5a4e2e0d9d3b";
+
 async function countAdminUsers(sb) {
   const { count } = await sb.from("admin_users").select("id", { count: "exact", head: true });
   return Number(count || 0);
 }
-
-// IDs fijos (multi-tenant)
-const SCORE_ORG_ID = "1f3b9980-a1c5-4557-b4eb-a75bb9a8aaa6";
-const UNICO_ORG_ID = "8a8c2f32-0d8f-4b33-9cbe-5a4e2e0d9d3b";
 
 export async function POST(req) {
   try {
@@ -36,20 +36,29 @@ export async function POST(req) {
     const email = normEmail(user?.email);
     if (!email) return json(400, { ok: false, error: "Email inválido" });
 
-    // Si ya está asignado a una org, no hagas nada
+    // Si ya está asignado (por email o user_id), no hacemos nada
     const { data: existing } = await sb
       .from("admin_users")
-      .select("id, organization_id, role, is_active")
+      .select("id, organization_id, role, is_active, email, user_id")
       .eq("is_active", true)
-      .or(`user_id.eq.${user?.id || "00000000-0000-0000-0000-000000000000"},email.ilike.${email}`)
+      .or(
+        `user_id.eq.${user?.id || "00000000-0000-0000-0000-000000000000"},email.ilike.${email}`
+      )
       .limit(1)
       .maybeSingle();
 
     if (existing?.id) {
+      // si estaba por user_id pero email vacío, lo normalizamos (no rompe nada)
+      if (!existing.email || normEmail(existing.email) !== email) {
+        await sb
+          .from("admin_users")
+          .update({ email, updated_at: new Date().toISOString() })
+          .eq("id", existing.id);
+      }
       return json(200, { ok: true, already: true, organization_id: existing.organization_id });
     }
 
-    // Seguridad anti-takeover
+    // Anti-takeover: si ya hay admins, exige secret (solo para bootstrap)
     const adminCount = await countAdminUsers(sb);
     if (adminCount > 0) {
       const secret = String(process.env.UNICOS_BOOTSTRAP_SECRET || "").trim();
@@ -63,44 +72,40 @@ export async function POST(req) {
       }
     }
 
-    // 1) Asegurar organizaciones
-    await sb
-      .from("organizations")
-      .upsert(
-        [
-          { id: SCORE_ORG_ID, name: "Score Store", slug: "score-store" },
-          { id: UNICO_ORG_ID, name: "Único Uniformes", slug: "unico-uniformes" },
-        ],
-        { onConflict: "id" }
-      );
+    // 1) asegurar organizaciones
+    await sb.from("organizations").upsert(
+      [
+        { id: SCORE_ORG_ID, name: "Score Store", slug: "score-store" },
+        { id: UNICO_ORG_ID, name: "Único Uniformes", slug: "unico-uniformes" },
+      ],
+      { onConflict: "id" }
+    );
 
-    // 2) Asignar owner (a ambas)
+    // 2) asignar owner (a ambas)
     const now = new Date().toISOString();
-    await sb
-      .from("admin_users")
-      .upsert(
-        [
-          {
-            organization_id: SCORE_ORG_ID,
-            user_id: user?.id || null,
-            email,
-            role: "owner",
-            is_active: true,
-            last_login: now,
-            updated_at: now,
-          },
-          {
-            organization_id: UNICO_ORG_ID,
-            user_id: user?.id || null,
-            email,
-            role: "owner",
-            is_active: true,
-            last_login: now,
-            updated_at: now,
-          },
-        ],
-        { onConflict: "organization_id,email" }
-      );
+    await sb.from("admin_users").upsert(
+      [
+        {
+          organization_id: SCORE_ORG_ID,
+          user_id: user?.id || null,
+          email,
+          role: "owner",
+          is_active: true,
+          last_login: now,
+          updated_at: now,
+        },
+        {
+          organization_id: UNICO_ORG_ID,
+          user_id: user?.id || null,
+          email,
+          role: "owner",
+          is_active: true,
+          last_login: now,
+          updated_at: now,
+        },
+      ],
+      { onConflict: "organization_id,email" }
+    );
 
     await writeAudit(sb, {
       organization_id: SCORE_ORG_ID,
