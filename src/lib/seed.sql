@@ -1,66 +1,50 @@
 -- src/lib/seed.sql
 -- =========================================================
--- UNICOS / SCORE STORE — SEED (IDEMPOTENT) v2026-02-27
+-- UNICOS ADMIN — SEED (Multi-tenant safe) v2026-02-27
+-- Objetivo: que el panel NO se vea vacío al lanzar.
 -- =========================================================
 
 BEGIN;
 
--- 1) Organización Score Store (ID fijo para alinear todo)
-INSERT INTO public.organizations (id, name, slug, metadata)
-VALUES (
-  '1f3b9980-a1c5-4557-b4eb-a75bb9a8aaa6'::uuid,
-  'Score Store',
-  'score-store',
-  jsonb_build_object('source','seed.sql','created','2026-02-27')
+-- 1) Asegurar org "Score Store" si tu tabla organizations tiene slug
+INSERT INTO public.organizations (name, slug)
+SELECT 'Score Store', 'score-store'
+WHERE EXISTS (
+  SELECT 1 FROM information_schema.columns
+  WHERE table_schema='public' AND table_name='organizations' AND column_name='slug'
 )
-ON CONFLICT (id) DO UPDATE
-SET
-  name = EXCLUDED.name,
-  slug = COALESCE(NULLIF(public.organizations.slug,''), EXCLUDED.slug),
-  metadata = public.organizations.metadata || EXCLUDED.metadata;
+ON CONFLICT (slug) DO NOTHING;
 
--- 2) site_settings (organization_id)
-INSERT INTO public.site_settings (organization_id, hero_title, promo_active, promo_text, pixel_id, updated_at)
-VALUES (
-  '1f3b9980-a1c5-4557-b4eb-a75bb9a8aaa6'::uuid,
-  'SCORE STORE 2026',
-  true,
-  '🔥 ENVÍOS NACIONALES E INTERNACIONALES 🔥',
-  NULL,
-  now()
+-- 2) Elegir organization_id destino (score-store si existe; si no, el primer org)
+WITH target_org AS (
+  SELECT id
+  FROM public.organizations
+  WHERE slug = 'score-store'
+  UNION ALL
+  SELECT id FROM public.organizations ORDER BY created_at ASC NULLS LAST
+  LIMIT 1
 )
-ON CONFLICT (organization_id) DO UPDATE
-SET
-  hero_title = EXCLUDED.hero_title,
-  promo_active = EXCLUDED.promo_active,
-  promo_text = EXCLUDED.promo_text,
-  pixel_id = EXCLUDED.pixel_id,
-  updated_at = now();
+INSERT INTO public.site_settings (organization_id, hero_title, promo_active, promo_text, pixel_id)
+SELECT id, 'SCORE STORE 2026', true, '🔥 ENVÍOS NACIONALES E INTERNACIONALES 🔥', NULL
+FROM target_org
+ON CONFLICT (organization_id) DO NOTHING;
 
--- 3) Producto demo (para que Products no esté vacío)
+-- 3) Producto demo (si no hay productos activos)
+WITH target_org AS (
+  SELECT id
+  FROM public.organizations
+  WHERE slug = 'score-store'
+  UNION ALL
+  SELECT id FROM public.organizations ORDER BY created_at ASC NULLS LAST
+  LIMIT 1
+)
 INSERT INTO public.products (organization_id, name, sku, price_mxn, stock, category, image_url, is_active)
-VALUES (
-  '1f3b9980-a1c5-4557-b4eb-a75bb9a8aaa6'::uuid,
-  'Camiseta Baja 1000 — Demo',
-  'DEMO-BAJA1000',
-  550.00,
-  100,
-  'BAJA_1000',
-  '/assets/logo-score.webp',
-  true
-)
-ON CONFLICT DO NOTHING;
-
--- 4) Admin user (EDITA el correo)
--- Nota: user_id puede quedar NULL, RLS también valida por email.
-INSERT INTO public.admin_users (organization_id, email, role, is_active)
-VALUES (
-  '1f3b9980-a1c5-4557-b4eb-a75bb9a8aaa6'::uuid,
-  'TU_CORREO_AQUI@tudominio.com',
-  'owner',
-  true
-)
-ON CONFLICT (organization_id, email) DO UPDATE
-SET role = EXCLUDED.role, is_active = true;
+SELECT id, 'Gorra SCORE — Demo', 'SCORE-DEMO-CAP', 550.00, 25, 'SCORE', '/icon-512.png', true
+FROM target_org
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.products p
+  WHERE p.organization_id = (SELECT id FROM target_org)
+    AND p.deleted_at IS NULL
+);
 
 COMMIT;
