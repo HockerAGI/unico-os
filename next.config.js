@@ -1,46 +1,40 @@
 /** @type {import('next').NextConfig} */
 
-// Creamos los Escudos de Seguridad (La Lista VIP)
+const SUPABASE_HOST = "lpbzndnavkbpxwnlbqgb.supabase.co";
+
+const csp = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "img-src 'self' data: blob: https://" + SUPABASE_HOST,
+  // Next usa estilos inline en varios casos => mantenemos unsafe-inline
+  "style-src 'self' 'unsafe-inline'",
+  // Next incluye scripts inline de bootstrap => mantenemos unsafe-inline
+  // (pero removemos unsafe-eval)
+  "script-src 'self' 'unsafe-inline'",
+  "connect-src 'self' https://" + SUPABASE_HOST + " wss://" + SUPABASE_HOST + " https://generativelanguage.googleapis.com",
+  "font-src 'self' data:",
+  "manifest-src 'self'",
+  "worker-src 'self' blob:",
+].join("; ");
+
 const securityHeaders = [
-  {
-    key: 'Content-Security-Policy',
-    // Aquí le decimos al navegador qué conexiones son seguras:
-    // 1. Supabase (Base de datos e imágenes)
-    // 2. Google Gemini (Inteligencia Artificial)
-    // 3. Todo el código interno de tu propia aplicación
-    value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://lpbzndnavkbpxwnlbqgb.supabase.co; connect-src 'self' https://lpbzndnavkbpxwnlbqgb.supabase.co wss://lpbzndnavkbpxwnlbqgb.supabase.co https://generativelanguage.googleapis.com; font-src 'self' data:;"
-  },
-  {
-    key: 'X-Content-Type-Options',
-    value: 'nosniff' // Evita que los hackers disfracen código malicioso como si fueran imágenes
-  },
-  {
-    key: 'X-Frame-Options',
-    value: 'DENY' // Evita que clonen tu página en otro sitio falso
-  }
+  { key: "Content-Security-Policy", value: csp },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+  { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains; preload" },
 ];
 
 const nextConfig = {
-  // Necesario para Netlify y despliegues serverless
   output: "standalone",
-
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "lpbzndnavkbpxwnlbqgb.supabase.co",
-      },
-    ],
+    remotePatterns: [{ protocol: "https", hostname: SUPABASE_HOST }],
   },
-
-  // Inyectamos los escudos en todas las páginas de tu panel
   async headers() {
-    return [
-      {
-        source: '/:path*',
-        headers: securityHeaders,
-      },
-    ];
+    return [{ source: "/:path*", headers: securityHeaders }];
   },
 };
 
