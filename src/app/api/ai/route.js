@@ -1,9 +1,12 @@
 // src/app/api/ai/route.js
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { serverSupabase, requireUserFromToken } from "@/lib/serverSupabase";
+import { hasPerm } from "@/lib/authz";
+import { writeAudit } from "@/lib/auditServer";
 
 function json(status, payload) {
   return NextResponse.json(payload, { status });
@@ -16,10 +19,15 @@ function getBearerToken(req) {
 }
 
 const clamp = (v, n = 2500) => String(v ?? "").trim().slice(0, n);
+const normEmail = (s) => String(s || "").trim().toLowerCase();
+
+const isUuid = (s) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    String(s || "").trim()
+  );
 
 function normalizeGeminiError(e) {
   const msg = String(e?.message || e || "");
-  // mensajes típicos: 404 model not found / permission denied / invalid key
   if (/model.*not found|404/i.test(msg)) {
     return "Modelo de IA no disponible. Cambia GEMINI_MODEL (recomendado: gemini-2.5-flash-lite).";
   }
@@ -27,6 +35,23 @@ function normalizeGeminiError(e) {
     return "IA desconectada o sin permisos. Revisa GEMINI_API_KEY en Netlify.";
   }
   return "Error interno en Unico IA.";
+}
+
+async function getMyRole(sb, orgId, user) {
+  const myEmail = normEmail(user?.email);
+  const { data: mem } = await sb
+    .from("admin_users")
+    .select("role,is_active")
+    .eq("organization_id", orgId)
+    .eq("is_active", true)
+    .or(
+      `user_id.eq.${user?.id || "00000000-0000-0000-0000-000000000000"},email.ilike.${myEmail}`
+    )
+    .limit(1)
+    .maybeSingle();
+
+  if (!mem?.is_active) return null;
+  return String(mem?.role || "").toLowerCase();
 }
 
 export async function POST(req) {
@@ -39,13 +64,24 @@ export async function POST(req) {
 
     const body = await req.json().catch(() => ({}));
     const prompt = clamp(body.prompt ?? body.message ?? body.text, 2000);
-    const orgId = clamp(body.orgId ?? body.organization_id ?? body.organizationId ?? body.org_id, 128);
+    const orgId = clamp(
+      body.orgId ?? body.organization_id ?? body.organizationId ?? body.org_id,
+      128
+    );
 
     if (!prompt || !orgId) {
       return json(400, {
         error: "Faltan datos. Se requiere 'message' o 'prompt' y 'organization_id' u 'orgId'.",
       });
     }
+
+    if (!isUuid(orgId)) {
+      return json(400, { error: "organization_id inválido." });
+    }
+
+    const role = await getMyRole(sb, orgId, user);
+    if (!role) return json(403, { error: "Permisos insuficientes." });
+    if (!hasPerm(role, "dashboard")) return json(403, { error: "Permisos insuficientes." });
 
     const geminiKey = process.env.GEMINI_API_KEY;
     if (!geminiKey) {
@@ -54,17 +90,18 @@ export async function POST(req) {
       });
     }
 
-    // Default actualizado (Feb 2026)
     const modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
 
     const genAI = new GoogleGenerativeAI(geminiKey);
     const model = genAI.getGenerativeModel({
       model: modelName,
       systemInstruction:
-        "Eres 'Unico IA', el agente ejecutivo-operativo del panel UnicOs. Hablas claro, sin tecnicismos. Si ejecutas acciones (promo, pixel, envíos, clientes, ventas), confirma lo hecho o explica el bloqueo con una solución.",
+        "Eres 'Unico IA', el agente ejecutivo-operativo del panel UnicOs. Hablas claro y directo. Si ejecutas acciones (promo, pixel, envíos, clientes, ventas), confirma lo hecho o explica el bloqueo con una solución.",
     });
 
-    // ==== Tools (acciones reales contra Supabase) ====
+    const p = prompt.toLowerCase();
+    let toolContext = "";
+
     const tool_salesSummary = async () => {
       const { data, error } = await sb
         .from("orders")
@@ -74,8 +111,8 @@ export async function POST(req) {
       if (error) return `No pude leer ventas (orders). Motivo: ${error.message}`;
 
       const rows = data || [];
-      const paid = rows.filter((o) => String(o.status) === "paid");
-      const pending = rows.filter((o) => String(o.status) !== "paid");
+      const paid = rows.filter((o) => String(o.status) === "paid" || String(o.status) === "fulfilled");
+      const pending = rows.filter((o) => !["paid", "fulfilled"].includes(String(o.status)));
       const total = paid.reduce((acc, o) => acc + Number(o.amount_total_mxn || 0), 0);
 
       return `Ventas: ${paid.length} pagadas, ${pending.length} no pagadas. Ingresos pagados: $${total.toLocaleString(
@@ -84,6 +121,7 @@ export async function POST(req) {
     };
 
     const tool_setPromo = async (text) => {
+      if (!hasPerm(role, "marketing")) return "No tienes permisos para activar promos (Marketing).";
       const promoText = clamp(text, 160);
       const { error } = await sb
         .from("site_settings")
@@ -102,6 +140,7 @@ export async function POST(req) {
     };
 
     const tool_disablePromo = async () => {
+      if (!hasPerm(role, "marketing")) return "No tienes permisos para desactivar promos (Marketing).";
       const { error } = await sb
         .from("site_settings")
         .upsert(
@@ -119,6 +158,9 @@ export async function POST(req) {
     };
 
     const tool_setPixel = async (pixelIdRaw) => {
+      if (!hasPerm(role, "marketing") && !hasPerm(role, "integrations")) {
+        return "No tienes permisos para configurar Pixel (Marketing/Integraciones).";
+      }
       const pixelId = clamp(pixelIdRaw, 80);
       const { error } = await sb
         .from("site_settings")
@@ -136,6 +178,9 @@ export async function POST(req) {
     };
 
     const tool_pendingShipments = async () => {
+      if (!hasPerm(role, "shipping") && !hasPerm(role, "orders")) {
+        return "No tienes permisos para ver envíos (Shipping/Pedidos).";
+      }
       const { data, error } = await sb
         .from("shipping_labels")
         .select("stripe_session_id,tracking_number,status,updated_at")
@@ -151,7 +196,7 @@ export async function POST(req) {
       const pending = rows.filter((r) => !String(r.status || "").toUpperCase().includes("DELIVER"));
       if (!pending.length) return "Envíos: todo está en estado final (entregado / finalizado).";
 
-      return `Envios pendientes (últimos ${pending.length}):\n- ${pending
+      return `Envíos pendientes (últimos ${pending.length}):\n- ${pending
         .slice(0, 10)
         .map(
           (r) =>
@@ -161,11 +206,14 @@ export async function POST(req) {
     };
 
     const tool_topCustomers = async () => {
+      if (!hasPerm(role, "crm") && !hasPerm(role, "orders")) {
+        return "No tienes permisos para ver clientes (CRM/Pedidos).";
+      }
       const { data, error } = await sb
         .from("orders")
         .select("email,customer_name,amount_total_mxn,status")
         .eq("organization_id", orgId)
-        .eq("status", "paid")
+        .in("status", ["paid", "fulfilled"])
         .limit(500);
 
       if (error) return `No pude leer clientes (orders). Motivo: ${error.message}`;
@@ -192,10 +240,6 @@ export async function POST(req) {
         .map((c) => `${c.name} · ${c.orders} compras · $${c.total.toLocaleString("es-MX")} MXN`)
         .join("\n- ")}`;
     };
-
-    // ==== Router de intención ====
-    const p = prompt.toLowerCase();
-    let toolContext = "";
 
     if (p.includes("promo") || p.includes("megáfono") || p.includes("cintillo")) {
       if (p.includes("apaga") || p.includes("desactiva") || p.includes("quita")) {
@@ -225,17 +269,40 @@ export async function POST(req) {
       toolContext = await tool_topCustomers();
     }
 
-    // ==== Respuestas automáticas ====
     if (toolContext === "El usuario quiere activar una promo.") {
       const copyResult = await model.generateContent(
         `Genera SOLO una frase corta (máximo 120 caracteres), persuasiva, en MAYÚSCULAS con 1-2 emojis para un cintillo de tienda. Contexto: "${prompt}"`
       );
       const copy = clamp(copyResult.response.text(), 160);
       toolContext = await tool_setPromo(copy);
+      await writeAudit(sb, {
+        organization_id: orgId,
+        actor_email: normEmail(user?.email),
+        actor_user_id: user?.id || null,
+        action: "ai.promo.auto_copy",
+        entity: "site_settings",
+        entity_id: orgId,
+        summary: "AI generated promo copy",
+        meta: { length: prompt.length },
+        ip: req.headers.get("x-forwarded-for") || null,
+        user_agent: req.headers.get("user-agent") || null,
+      });
       return json(200, { reply: `Listo.\n${toolContext}` });
     }
 
     if (toolContext === "El usuario pidió configurar Pixel, pero no dio el ID.") {
+      await writeAudit(sb, {
+        organization_id: orgId,
+        actor_email: normEmail(user?.email),
+        actor_user_id: user?.id || null,
+        action: "ai.pixel.missing",
+        entity: "ai",
+        entity_id: orgId,
+        summary: "AI asked for pixel id",
+        meta: { length: prompt.length },
+        ip: req.headers.get("x-forwarded-for") || null,
+        user_agent: req.headers.get("user-agent") || null,
+      });
       return json(200, {
         reply: "Pásame el número del Pixel (solo dígitos) y lo guardo. Ejemplo: 123456789012345.",
       });
@@ -247,6 +314,19 @@ export async function POST(req) {
 
     const result = await model.generateContent(finalPrompt);
     const reply = clamp(result?.response?.text?.() || "", 2500);
+
+    await writeAudit(sb, {
+      organization_id: orgId,
+      actor_email: normEmail(user?.email),
+      actor_user_id: user?.id || null,
+      action: "ai.prompt",
+      entity: "ai",
+      entity_id: orgId,
+      summary: "AI prompt executed",
+      meta: { length: prompt.length, tool: toolContext ? true : false, model: modelName, role },
+      ip: req.headers.get("x-forwarded-for") || null,
+      user_agent: req.headers.get("user-agent") || null,
+    });
 
     return json(200, { reply: reply || "Sin respuesta." });
   } catch (e) {
