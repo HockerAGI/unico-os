@@ -1,4 +1,5 @@
 // src/app/api/health/route.js
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
@@ -25,7 +26,9 @@ export async function GET(req) {
         ok: true,
         env: {
           SUPABASE_URL: Boolean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL),
-          SUPABASE_SECRET_KEY: Boolean(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
+          SUPABASE_SECRET_KEY: Boolean(
+            process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+          ),
 
           GEMINI_API_KEY: Boolean(process.env.GEMINI_API_KEY),
           GEMINI_MODEL: Boolean(process.env.GEMINI_MODEL),
