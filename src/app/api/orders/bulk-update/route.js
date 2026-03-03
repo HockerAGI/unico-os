@@ -16,21 +16,9 @@ function getBearerToken(req) {
 }
 
 const isUuid = (s) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    String(s || "").trim()
-  );
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || "").trim());
 
 const normEmail = (s) => String(s || "").trim().toLowerCase();
-
-const ALLOWED_STATUS = new Set([
-  "pending",
-  "pending_payment",
-  "paid",
-  "payment_failed",
-  "fulfilled",
-  "cancelled",
-  "refunded",
-]);
 
 function clampIds(arr, max = 120) {
   const out = [];
@@ -51,15 +39,15 @@ async function getMyRole(sb, orgId, user) {
     .select("role,is_active")
     .eq("organization_id", orgId)
     .eq("is_active", true)
-    .or(
-      `user_id.eq.${user?.id || "00000000-0000-0000-0000-000000000000"},email.ilike.${myEmail}`
-    )
+    .or(`user_id.eq.${user?.id || "00000000-0000-0000-0000-000000000000"},email.ilike.${myEmail}`)
     .limit(1)
     .maybeSingle();
 
   if (!mem?.is_active) return null;
   return String(mem?.role || "").toLowerCase();
 }
+
+const allowedStatuses = new Set(["pending", "pending_payment", "paid", "payment_failed", "fulfilled", "cancelled"]);
 
 export async function POST(req) {
   try {
@@ -71,43 +59,38 @@ export async function POST(req) {
 
     const body = await req.json().catch(() => ({}));
     const orgId = String(body?.org_id || "").trim();
-    const orderIds = clampIds(body?.order_ids, 150);
-    const patch = body?.patch && typeof body.patch === "object" ? body.patch : {};
+    const ids = clampIds(body?.order_ids, 200);
+    const patch = body?.patch || {};
 
     if (!isUuid(orgId)) return json(400, { ok: false, error: "org_id inválido" });
-    if (!orderIds.length) return json(400, { ok: false, error: "order_ids vacío" });
+    if (!ids.length) return json(400, { ok: false, error: "order_ids vacío" });
 
     const role = await getMyRole(sb, orgId, user);
     if (!role || !hasPerm(role, "orders")) return json(403, { ok: false, error: "Permisos insuficientes" });
 
-    const newStatus = String(patch?.status || "").trim().toLowerCase();
-    if (!ALLOWED_STATUS.has(newStatus)) return json(400, { ok: false, error: "status inválido" });
+    const nextStatus = patch?.status ? String(patch.status).toLowerCase().trim() : null;
+    if (nextStatus && !allowedStatuses.has(nextStatus)) return json(400, { ok: false, error: "status inválido" });
 
-    const now = new Date().toISOString();
+    const update = { updated_at: new Date().toISOString() };
+    if (nextStatus) update.status = nextStatus;
 
-    const { data: updated, error: eUpd } = await sb
-      .from("orders")
-      .update({ status: newStatus, updated_at: now })
-      .eq("organization_id", orgId)
-      .in("id", orderIds)
-      .select("id,status,updated_at");
-
-    if (eUpd) return json(400, { ok: false, error: eUpd.message });
+    const { error: upErr } = await sb.from("orders").update(update).eq("organization_id", orgId).in("id", ids);
+    if (upErr) return json(500, { ok: false, error: "No se pudo actualizar" });
 
     await writeAudit(sb, {
       organization_id: orgId,
       actor_email: normEmail(user?.email),
       actor_user_id: user?.id || null,
-      action: "orders.bulk_update_status",
+      action: "orders.bulk_update",
       entity: "orders",
-      entity_id: String(orderIds.length),
-      summary: `Bulk updated ${orderIds.length} orders to ${newStatus}`,
-      meta: { count: orderIds.length, status: newStatus },
+      entity_id: String(ids.length),
+      summary: `Bulk update ${ids.length} orders (${nextStatus || "no status change"})`,
+      meta: { count: ids.length, patch: { status: nextStatus } },
       ip: req.headers.get("x-forwarded-for") || null,
       user_agent: req.headers.get("user-agent") || null,
     });
 
-    return json(200, { ok: true, updated: updated || [] });
+    return json(200, { ok: true, updated: ids.length });
   } catch (e) {
     return json(500, { ok: false, error: String(e?.message || e) });
   }
