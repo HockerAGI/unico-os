@@ -3,32 +3,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
-import { serverSupabase, requireUserFromToken } from "@/lib/serverSupabase";
 
-function getBearerToken(req) {
-  const h = req.headers.get("authorization") || "";
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  return m ? m[1] : "";
-}
-
-export async function GET(req) {
+export async function GET() {
   try {
-    const sb = serverSupabase();
-    const token = getBearerToken(req);
-
-    const { error } = await requireUserFromToken(sb, token);
-    if (error) {
-      return NextResponse.json({ ok: false, error: "No autorizado" }, { status: 401 });
-    }
-
     return NextResponse.json(
       {
         ok: true,
         env: {
-          SUPABASE_URL: Boolean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL),
-          SUPABASE_SECRET_KEY: Boolean(
-            process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+          NEXT_PUBLIC_SUPABASE_URL: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: Boolean(
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
           ),
+          SUPABASE_URL: Boolean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL),
+          SUPABASE_SECRET_KEY: Boolean(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
 
           GEMINI_API_KEY: Boolean(process.env.GEMINI_API_KEY),
           GEMINI_MODEL: Boolean(process.env.GEMINI_MODEL),
@@ -41,9 +28,6 @@ export async function GET(req) {
       { status: 200 }
     );
   } catch (e) {
-    return NextResponse.json(
-      { ok: false, error: "Error interno", detail: String(e?.message || e) },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
   }
 }
