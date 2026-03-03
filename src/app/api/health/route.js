@@ -4,29 +4,31 @@ export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
 
+/**
+ * Health NO requiere auth y NO requiere Supabase.
+ * Solo expone banderas booleanas (seguro).
+ * Esto permite SetupWizard cuando Netlify aún no tiene envs.
+ */
 export async function GET() {
   try {
-    return NextResponse.json(
-      {
-        ok: true,
-        env: {
-          NEXT_PUBLIC_SUPABASE_URL: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: Boolean(
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-          ),
-          SUPABASE_URL: Boolean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL),
-          SUPABASE_SECRET_KEY: Boolean(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
+    const env = {
+      NEXT_PUBLIC_SUPABASE_URL: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: Boolean(
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+      ),
+      SUPABASE_URL: Boolean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL),
+      SUPABASE_SECRET_KEY: Boolean(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
 
-          GEMINI_API_KEY: Boolean(process.env.GEMINI_API_KEY),
-          GEMINI_MODEL: Boolean(process.env.GEMINI_MODEL),
+      STRIPE_SECRET_KEY: Boolean(process.env.STRIPE_SECRET_KEY),
+      ENVIA_API_KEY: Boolean(process.env.ENVIA_API_KEY),
 
-          STRIPE_SECRET_KEY: Boolean(process.env.STRIPE_SECRET_KEY),
-          ENVIA_API_KEY: Boolean(process.env.ENVIA_API_KEY),
-          FX_USD_TO_MXN: Boolean(process.env.FX_USD_TO_MXN),
-        },
-      },
-      { status: 200 }
-    );
+      GEMINI_API_KEY: Boolean(process.env.GEMINI_API_KEY),
+      GEMINI_MODEL: Boolean(process.env.GEMINI_MODEL),
+
+      FX_USD_TO_MXN: Boolean(process.env.FX_USD_TO_MXN),
+    };
+
+    return NextResponse.json({ ok: true, env }, { status: 200, headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e?.message || e) }, { status: 500 });
   }
