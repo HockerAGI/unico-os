@@ -8,13 +8,14 @@ const publicKey =
 
 export const SUPABASE_CONFIGURED = Boolean(url && publicKey);
 
+/**
+ * Cliente público (browser):
+ * - SOLO anon/publishable key
+ * - Requiere RLS en Supabase
+ */
 export const supabase = SUPABASE_CONFIGURED
   ? createClient(url, publicKey, {
       global: { headers: { "x-client-info": "unicos-admin-web" } },
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-      },
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     })
   : null;
