@@ -53,7 +53,7 @@ import {
 } from "lucide-react";
 import AiDock from "./ai-dock";
 
-import { supabase } from "@/lib/supabase";
+import { supabase, SUPABASE_CONFIGURED } from "@/lib/supabase";
 import { hasPerm, canManageUsers } from "@/lib/authz";
 
 /* =========================================================
@@ -123,6 +123,75 @@ function BootScreen() {
   );
 }
 
+function SetupWizard() {
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+      <div className="max-w-xl w-full bg-white border border-slate-200 rounded-[2rem] shadow-2xl p-8">
+        <div className="flex items-center gap-3">
+          <BrandMark size={44} />
+          <div className="min-w-0">
+            <h1 className="text-lg font-black text-slate-900 tracking-tight">UnicOs — Setup requerido</h1>
+            <p className="text-xs font-semibold text-slate-600">
+              Este panel no puede funcionar sin variables de entorno reales (Netlify).
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Checklist</p>
+
+          <div className="mt-3 grid gap-2">
+            <div className="flex items-center justify-between rounded-xl bg-white border border-slate-200 px-4 py-3">
+              <span className="text-sm font-black text-slate-800">Supabase público (NEXT_PUBLIC_*)</span>
+              <span
+                className={clsx(
+                  "text-xs font-black px-3 py-1 rounded-full border",
+                  SUPABASE_CONFIGURED
+                    ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+                    : "bg-rose-50 text-rose-900 border-rose-200"
+                )}
+              >
+                {SUPABASE_CONFIGURED ? "OK" : "FALTA"}
+              </span>
+            </div>
+
+            <div className="rounded-xl bg-white border border-slate-200 px-4 py-3">
+              <p className="text-sm font-black text-slate-800">Variables que debes poner en Netlify (UnicOs)</p>
+              <ul className="mt-2 text-sm font-semibold text-slate-700 space-y-1">
+                <li>• <span className="font-black">NEXT_PUBLIC_SUPABASE_URL</span></li>
+                <li>• <span className="font-black">NEXT_PUBLIC_SUPABASE_ANON_KEY</span></li>
+                <li>• <span className="font-black">SUPABASE_SERVICE_ROLE_KEY</span></li>
+                <li>• <span className="font-black">STRIPE_SECRET_KEY</span></li>
+                <li>• <span className="font-black">ENVIA_API_KEY</span> (si usas Envía)</li>
+              </ul>
+              <p className="mt-3 text-xs font-semibold text-slate-500">
+                Después: redeploy en Netlify. Sin eso, puede aparecer “No se encontró la organización”.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 flex items-center gap-2">
+          <button
+            onClick={() => window.location.reload()}
+            className="px-5 py-3 rounded-2xl text-white font-black shadow-sm"
+            style={{ background: BRAND.grad }}
+          >
+            Reintentar
+          </button>
+
+          <a
+            href="/"
+            className="px-5 py-3 rounded-2xl bg-white border border-slate-200 hover:bg-slate-50 font-black text-slate-800"
+          >
+            Recargar
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EmptyState({ title, desc, actionLabel, onAction }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
@@ -168,22 +237,85 @@ function Toast({ t }) {
       : "bg-rose-50 text-rose-900 border-rose-200";
 
   return (
-    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[99] px-4">
-      <div
-        className={clsx(
-          "max-w-lg w-full border rounded-2xl shadow-xl px-4 py-3 font-bold text-sm",
-          tone
-        )}
-      >
+    <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50">
+      <div className={clsx("px-5 py-3 rounded-2xl border shadow-xl text-sm font-black", tone)}>
         {t.text}
       </div>
     </div>
   );
 }
+function Tabs({ active, setActive, items, compact }) {
+  return (
+    <div className={clsx("flex gap-2 flex-wrap", compact && "gap-1")}>
+      {items.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => setActive(t.id)}
+          className={clsx(
+            "px-4 py-2 rounded-2xl font-black text-sm border transition",
+            compact ? "px-3 py-2 text-xs" : "px-4 py-2",
+            active === t.id
+              ? "bg-slate-900 text-white border-slate-900"
+              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+          )}
+          title={t.desc}
+          aria-label={t.label}
+        >
+          <span className="inline-flex items-center gap-2">
+            <span className="text-slate-400">{t.icon}</span>
+            {t.label}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
-/* =========================================================
-   COMMAND PALETTE (Ctrl/Cmd + K)
-   ========================================================= */
+const ALL_TABS = [
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    icon: <LayoutDashboard size={16} />,
+    desc: "Resumen de ventas, comisiones y actividad",
+  },
+  {
+    id: "orders",
+    label: "Pedidos",
+    icon: <ShoppingCart size={16} />,
+    desc: "Pedidos / Envíos (Stripe + Envía)",
+  },
+  {
+    id: "products",
+    label: "Productos",
+    icon: <Package size={16} />,
+    desc: "Catálogo rápido",
+  },
+  {
+    id: "crm",
+    label: "CRM",
+    icon: <Users size={16} />,
+    desc: "Clientes reales desde pedidos",
+  },
+  {
+    id: "marketing",
+    label: "Marketing",
+    icon: <Megaphone size={16} />,
+    desc: "Promos, banner, pixel",
+  },
+  {
+    id: "users",
+    label: "Equipo",
+    icon: <Shield size={16} />,
+    desc: "Usuarios, roles y accesos",
+  },
+  {
+    id: "integrations",
+    label: "Integraciones",
+    icon: <Settings size={16} />,
+    desc: "Estado de conexiones",
+  },
+];
+
 function CommandPalette({
   open,
   onClose,
@@ -198,742 +330,522 @@ function CommandPalette({
   onOpenAi,
   onRefresh,
 }) {
-  const q = String(query || "").trim();
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => {
-      if (e.key === "Escape") onClose?.();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
   if (!open) return null;
 
-  const quick = [
-    { id: "dashboard", label: "Ir a Finanzas", icon: <LayoutDashboard size={18} /> },
-    { id: "orders", label: "Ir a Pedidos", icon: <ShoppingCart size={18} /> },
-    { id: "products", label: "Ir a Productos", icon: <Package size={18} /> },
-    { id: "crm", label: "Ir a Clientes", icon: <Users size={18} /> },
-    { id: "marketing", label: "Ir a Marketing", icon: <Megaphone size={18} /> },
-    ...(canInvite
-      ? [{ id: "users", label: "Ir a Equipo", icon: <Shield size={18} /> }]
-      : []),
-    { id: "integrations", label: "Ir a Integraciones", icon: <Settings size={18} /> },
-  ].filter((a) => tabs.some((t) => t.id === a.id));
-
-  const go = (id) => {
-    if (!tabs.some((t) => t.id === id)) return;
-    setActiveTab(id);
-    onClose?.();
-  };
-
-  const openAi = () => {
-    try {
-      onOpenAi?.();
-    } catch {}
-    onClose?.();
-  };
-
-  const refresh = () => {
-    try {
-      onRefresh?.();
-    } catch {}
-    onClose?.();
-  };
-
   return (
-    <div className="fixed inset-0 z-[95] bg-slate-900/40 backdrop-blur-sm p-4 flex items-start md:items-center justify-center">
-      <div className="w-full max-w-2xl bg-white rounded-[2rem] border border-slate-200 shadow-2xl overflow-hidden">
-        <div className="p-4 border-b border-slate-100 bg-slate-50/70 flex items-center gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-3 text-slate-400" size={18} />
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="absolute left-1/2 top-16 -translate-x-1/2 w-[92vw] max-w-2xl">
+        <div className="rounded-[2rem] border border-slate-200 bg-white shadow-2xl overflow-hidden">
+          <div className="p-4 border-b border-slate-200 flex items-center gap-3">
+            <Search className="text-slate-400" size={18} />
             <input
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar pedidos o productos…"
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white font-black text-slate-800 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+              placeholder="Buscar… (clientes, pedidos, módulos)"
+              className="w-full outline-none font-black text-slate-900"
             />
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"
+              aria-label="Cerrar"
+              title="Cerrar"
+            >
+              <X size={18} />
+            </button>
           </div>
 
+          <div className="p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">
+              Acciones rápidas
+            </p>
+
+            <div className="grid md:grid-cols-2 gap-3">
+              <button
+                onClick={() => {
+                  onRefresh?.();
+                  onClose?.();
+                }}
+                className="rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 p-4 text-left"
+              >
+                <p className="font-black text-slate-900 flex items-center gap-2">
+                  <RefreshCcw size={16} className="text-slate-400" />
+                  Actualizar datos
+                </p>
+                <p className="text-xs font-semibold text-slate-500 mt-1">Recarga listas y KPIs.</p>
+              </button>
+
+              <button
+                onClick={() => {
+                  onOpenAi?.();
+                  onClose?.();
+                }}
+                className="rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 p-4 text-left"
+              >
+                <p className="font-black text-slate-900 flex items-center gap-2">
+                  <Sparkles size={16} className="text-slate-400" />
+                  Abrir IA
+                </p>
+                <p className="text-xs font-semibold text-slate-500 mt-1">Asistente y auditoría.</p>
+              </button>
+            </div>
+
+            <div className="mt-6">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">
+                Navegación
+              </p>
+
+              <div className="grid md:grid-cols-2 gap-3">
+                {tabs.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      setActiveTab(t.id);
+                      onClose?.();
+                    }}
+                    className={clsx(
+                      "rounded-2xl border p-4 text-left",
+                      activeTab === t.id
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white hover:bg-slate-50 text-slate-800"
+                    )}
+                  >
+                    <p className="font-black flex items-center gap-2">
+                      <span className={clsx(activeTab === t.id ? "text-white" : "text-slate-400")}>
+                        {t.icon}
+                      </span>
+                      {t.label}
+                    </p>
+                    <p className={clsx("text-xs font-semibold mt-1", activeTab === t.id ? "text-white/80" : "text-slate-500")}>
+                      {t.desc}
+                    </p>
+                  </button>
+                ))}
+              </div>
+
+              {!canInvite ? (
+                <p className="text-xs font-semibold text-slate-500 mt-4">
+                  Nota: algunas acciones pueden estar restringidas por tu rol.
+                </p>
+              ) : null}
+            </div>
+
+            {results?.length ? (
+              <div className="mt-6">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">
+                  Resultados
+                </p>
+                <div className="space-y-2">
+                  {results.map((r) => (
+                    <div key={r.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="font-black text-slate-900">{r.title}</p>
+                      <p className="text-xs font-semibold text-slate-500 mt-1">{r.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RoleChip({ role }) {
+  const r = String(role || "viewer").toLowerCase();
+
+  const cls =
+    r === "owner"
+      ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+      : r === "admin"
+      ? "bg-sky-50 text-sky-900 border-sky-200"
+      : r === "ops"
+      ? "bg-amber-50 text-amber-900 border-amber-200"
+      : r === "marketing"
+      ? "bg-fuchsia-50 text-fuchsia-900 border-fuchsia-200"
+      : r === "sales"
+      ? "bg-indigo-50 text-indigo-900 border-indigo-200"
+      : "bg-slate-100 text-slate-700 border-slate-200";
+
+  return (
+    <span className={clsx("inline-flex items-center px-3 py-1 rounded-full border text-xs font-black", cls)}>
+      {r.toUpperCase()}
+    </span>
+  );
+}
+function OrgPicker({ orgs, selectedOrgId, onSelect, role }) {
+  const [open, setOpen] = useState(false);
+  const selected = (orgs || []).find((o) => o.id === selectedOrgId) || (orgs || [])[0];
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-3 px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50"
+        aria-label="Seleccionar organización"
+        title="Seleccionar organización"
+      >
+        <BrandMark size={34} />
+        <div className="min-w-0 text-left">
+          <p className="font-black text-slate-900 truncate">{selected?.name || "Organización"}</p>
+          <p className="text-xs font-semibold text-slate-500 truncate">Acceso: {String(role || "viewer").toUpperCase()}</p>
+        </div>
+        <ChevronDown size={18} className="text-slate-400" />
+      </button>
+
+      {open ? (
+        <div className="absolute top-[110%] left-0 z-40 w-[340px] max-w-[92vw] rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl overflow-hidden">
+          <div className="p-3 border-b border-slate-200 flex items-center justify-between">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Organizaciones</p>
+            <button
+              onClick={() => setOpen(false)}
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"
+              aria-label="Cerrar"
+              title="Cerrar"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="max-h-[320px] overflow-y-auto">
+            {(orgs || []).map((o) => (
+              <button
+                key={o.id}
+                onClick={() => {
+                  onSelect?.(o.id);
+                  setOpen(false);
+                }}
+                className={clsx(
+                  "w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-100",
+                  o.id === selectedOrgId && "bg-slate-50"
+                )}
+              >
+                <p className="font-black text-slate-900">{o.name}</p>
+                <p className="text-xs font-semibold text-slate-500">{o.slug || o.id}</p>
+              </button>
+            ))}
+            {!orgs?.length ? (
+              <p className="p-4 text-sm font-semibold text-slate-500">Sin organizaciones.</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SideNav({ activeTab, setActiveTab, compact, onSignOut }) {
+  return (
+    <aside
+      className={clsx(
+        "hidden md:flex flex-col gap-4 border-r border-slate-200 bg-white p-5",
+        compact ? "w-20" : "w-72"
+      )}
+    >
+      <div className="flex items-center gap-3">
+        <BrandMark size={44} />
+        {!compact ? (
+          <div className="min-w-0">
+            <p className="text-lg font-black text-slate-900 leading-none">{BRAND.name}</p>
+            <p className="text-xs font-semibold text-slate-500">Panel corporativo</p>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-2 space-y-2">
+        {ALL_TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={clsx(
+              "w-full rounded-2xl border flex items-center gap-3 transition px-4 py-3",
+              compact ? "justify-center px-3" : "",
+              activeTab === t.id
+                ? "bg-slate-900 text-white border-slate-900"
+                : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+            )}
+            title={t.label}
+            aria-label={t.label}
+          >
+            <span className={clsx(activeTab === t.id ? "text-white" : "text-slate-400")}>{t.icon}</span>
+            {!compact ? <span className="font-black text-sm">{t.label}</span> : null}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-auto">
+        <button
+          onClick={onSignOut}
+          className={clsx(
+            "w-full rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-3 flex items-center gap-3",
+            compact && "justify-center px-3"
+          )}
+        >
+          <LogOut size={18} className="text-slate-400" />
+          {!compact ? <span className="font-black text-sm">Salir</span> : null}
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function MobileNav({ activeTab, setActiveTab, open, onClose, onSignOut }) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 md:hidden">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="absolute left-0 top-0 bottom-0 w-[84vw] max-w-sm bg-white shadow-2xl border-r border-slate-200 p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <BrandMark size={44} />
+            <div>
+              <p className="text-lg font-black text-slate-900 leading-none">{BRAND.name}</p>
+              <p className="text-xs font-semibold text-slate-500">Panel corporativo</p>
+            </div>
+          </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"
             aria-label="Cerrar"
+            title="Cerrar"
           >
             <X size={18} />
           </button>
         </div>
 
-        <div className="p-4">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
-            Acciones rápidas
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {quick.map((a) => (
-              <button
-                key={a.id}
-                onClick={() => go(a.id)}
-                className={clsx(
-                  "w-full p-3 rounded-2xl border text-left flex items-center justify-between gap-3 transition-colors",
-                  activeTab === a.id
-                    ? "border-transparent text-white"
-                    : "border-slate-200 hover:bg-slate-50"
-                )}
-                style={activeTab === a.id ? { background: BRAND.grad } : undefined}
-              >
-                <span className="flex items-center gap-2 font-black">
-                  <span className={activeTab === a.id ? "text-white" : "text-slate-500"}>
-                    {a.icon}
-                  </span>
-                  {a.label}
-                </span>
-                <span
-                  className={clsx(
-                    "text-xs font-black",
-                    activeTab === a.id ? "text-white/80" : "text-slate-400"
-                  )}
-                >
-                  Enter
-                </span>
-              </button>
-            ))}
-
+        <div className="mt-6 space-y-2">
+          {ALL_TABS.map((t) => (
             <button
-              onClick={refresh}
-              className="w-full p-3 rounded-2xl border border-slate-200 hover:bg-slate-50 text-left flex items-center justify-between gap-3"
+              key={t.id}
+              onClick={() => {
+                setActiveTab(t.id);
+                onClose?.();
+              }}
+              className={clsx(
+                "w-full rounded-2xl border flex items-center gap-3 transition px-4 py-3",
+                activeTab === t.id
+                  ? "bg-slate-900 text-white border-slate-900"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              )}
             >
-              <span className="flex items-center gap-2 font-black text-slate-900">
-                <RefreshCcw size={18} className="text-slate-500" /> Actualizar vista
-              </span>
-              <span className="text-xs font-black text-slate-400">R</span>
+              <span className={clsx(activeTab === t.id ? "text-white" : "text-slate-400")}>{t.icon}</span>
+              <span className="font-black text-sm">{t.label}</span>
             </button>
-
-            <button
-              onClick={openAi}
-              className="w-full p-3 rounded-2xl border border-slate-200 hover:bg-slate-50 text-left flex items-center justify-between gap-3"
-            >
-              <span className="flex items-center gap-2 font-black text-slate-900">
-                <Sparkles size={18} className="text-slate-500" /> Abrir IA
-              </span>
-              <span className="text-xs font-black text-slate-400">I</span>
-            </button>
-          </div>
-
-          <div className="mt-5">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">
-              Resultados{q.length >= 2 ? " ·" : ""}{" "}
-              <span className="ml-1">
-                {q.length >= 2 ? `“${q}”` : "Escribe para buscar"}
-              </span>
-            </p>
-
-            {q.length < 2 ? (
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-600">
-                Tip: usa <span className="font-black">Ctrl/⌘ + K</span> en cualquier parte.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div>
-                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">
-                    Pedidos
-                  </p>
-                  {results?.orders?.length ? (
-                    <div className="space-y-1">
-                      {results.orders.map((o) => (
-                        <button
-                          key={o.id}
-                          className="w-full text-left p-3 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200"
-                          onClick={() => go("orders")}
-                        >
-                          <div className="flex items-center justify-between">
-                            <p className="font-black text-slate-900">
-                              #{String(o.id).split("-")[0].toUpperCase()} {" "}
-                              <span className="text-slate-500 font-semibold">
-                                • {moneyMXN(o.amount_total_mxn)}
-                              </span>
-                            </p>
-                            <span className="text-xs font-black text-slate-600">
-                              {String(o.status || "").toUpperCase()}
-                            </span>
-                          </div>
-                          <p className="text-xs font-semibold text-slate-500">
-                            {o.customer_name || o.email || "—"}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm font-semibold text-slate-500">Sin coincidencias.</p>
-                  )}
-                </div>
-
-                <div>
-                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">
-                    Productos
-                  </p>
-                  {results?.products?.length ? (
-                    <div className="space-y-1">
-                      {results.products.map((p) => (
-                        <button
-                          key={p.id}
-                          className="w-full text-left p-3 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200"
-                          onClick={() => go("products")}
-                        >
-                          <p className="font-black text-slate-900">{p.name}</p>
-                          <p className="text-xs font-semibold text-slate-500">
-                            SKU: {p.sku || "—"} • {moneyMXN(p.price_mxn)} • Stock: {num(p.stock)}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm font-semibold text-slate-500">Sin coincidencias.</p>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          ))}
         </div>
 
-        <div className="p-4 border-t border-slate-100 bg-slate-50/70 text-xs font-bold text-slate-500 flex items-center justify-between">
-          <span>
-            <span className="font-black">Ctrl/⌘ + K</span> abrir •{" "}
-            <span className="font-black">Esc</span> cerrar
-          </span>
-          <span className="font-black text-slate-700">UnicOs</span>
+        <div className="mt-8">
+          <button
+            onClick={onSignOut}
+            className="w-full rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-3 flex items-center gap-3"
+          >
+            <LogOut size={18} className="text-slate-400" />
+            <span className="font-black text-sm">Salir</span>
+          </button>
         </div>
       </div>
     </div>
   );
 }
-
-/* =========================================================
-   AUTH GATE
-   ========================================================= */
-
-function AuthGate({ onDone }) {
-  const { toast, show } = useToast();
-  const [state, setState] = useState({ email: "", pass: "", busy: false });
-
-  const signIn = async () => {
-    const email = normEmail(state.email);
-    const pass = String(state.pass || "");
-    if (!email || pass.length < 6) {
-      show({ type: "warn", text: "Email y contraseña válidos (mínimo 6 caracteres)." });
-      return;
-    }
-
-    setState((s) => ({ ...s, busy: true }));
-
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password: pass,
-      });
-      if (error) throw error;
-      onDone?.(data?.session || null);
-    } catch (e) {
-      show({ type: "bad", text: String(e?.message || e) });
-    } finally {
-      setState((s) => ({ ...s, busy: false }));
-    }
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
-      <div className="max-w-md w-full bg-white border border-slate-200 rounded-[2rem] shadow-2xl p-8">
-        <div className="flex items-center gap-3 mb-6">
-          <BrandMark size={44} />
-          <div>
-            <h1 className="text-lg font-black text-slate-900 leading-tight tracking-tight">
-              UnicOs Admin
-            </h1>
-            <p className="text-xs font-semibold text-slate-500">Acceso de administración</p>
-          </div>
-        </div>
-
-        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mb-2 block">
-          Email
-        </label>
-        <input
-          value={state.email}
-          onChange={(e) => setState((s) => ({ ...s, email: e.target.value }))}
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 font-bold outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
-          placeholder="correo@dominio.com"
-        />
-
-        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mt-4 mb-2 block">
-          Contraseña
-        </label>
-        <input
-          type="password"
-          value={state.pass}
-          onChange={(e) => setState((s) => ({ ...s, pass: e.target.value }))}
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 font-bold outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
-          placeholder="••••••••"
-        />
-
-        <button
-          onClick={signIn}
-          disabled={state.busy}
-          className="mt-6 w-full px-5 py-3 rounded-2xl text-white font-black shadow-sm disabled:opacity-60"
-          style={{ background: BRAND.grad }}
-        >
-          {state.busy ? "Entrando…" : "Entrar"}
-        </button>
-
-        {toast ? <Toast t={toast} /> : null}
-      </div>
-    </div>
-  );
-}
-
-/* =========================================================
-   PAGE
-   ========================================================= */
-
-export default function AdminPage() {
-  const [session, setSession] = useState(null);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data?.session || null));
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-    });
-
-    return () => sub?.subscription?.unsubscribe?.();
-  }, []);
-
-  if (!session) {
-    return <AuthGate onDone={(s) => setSession(s)} />;
-  }
-
-  return <Shell session={session} />;
-}
-
-/* =========================================================
-   SHELL
-   ========================================================= */
-
-function Shell({ session }) {
+function Shell({ token, orgs, role, selectedOrgId, setSelectedOrgId, onSignOut }) {
   const { toast, show: toastShow } = useToast();
 
-  const token = session?.access_token || "";
-  const userEmail = normEmail(session?.user?.email);
-
-  const [loading, setLoading] = useState(true);
-  const [orgs, setOrgs] = useState([]);
-  const [selectedOrgId, setSelectedOrgId] = useState(null);
-
-  const [role, setRole] = useState("viewer");
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [compactNav, setCompactNav] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  // Global Search (orders + products)
-  const [globalQuery, setGlobalQuery] = useState("");
-  const [globalResults, setGlobalResults] = useState({ orders: [], products: [] });
-
-  // Command Palette
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [globalQuery, setGlobalQuery] = useState("");
+  const [globalResults, setGlobalResults] = useState([]);
   const paletteInputRef = useRef(null);
 
   const canInvite = canManageUsers(role);
-  const canWrite = ["owner", "admin", "ops"].includes(String(role || "").toLowerCase());
+  const canWrite = hasPerm(role, "write");
 
   const openAi = useCallback(() => {
-    try {
-      const btn = document.querySelector(".ai-fab");
-      btn?.click?.();
-    } catch {}
+    const ev = new CustomEvent("open-ai-dock");
+    window.dispatchEvent(ev);
   }, []);
 
   const forceRefresh = useCallback(() => {
     toastShow({ type: "info", text: "Actualizando…" });
-    try {
-      window.location.reload();
-    } catch {}
+    window.location.reload();
   }, [toastShow]);
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      try {
-        const { data: mems, error: memErr } = await supabase
-          .from("admin_users")
-          .select("organization_id, role, is_active")
-          .ilike("email", userEmail)
-          .eq("is_active", true);
-
-        if (memErr) throw memErr;
-
-        const orgIds = Array.from(
-          new Set((mems || []).map((m) => m.organization_id).filter(Boolean))
-        );
-
-        if (!orgIds.length) {
-          setOrgs([]);
-          setSelectedOrgId(null);
-          setRole("viewer");
-          return;
-        }
-
-        const { data: orgData, error: orgErr } = await supabase
-          .from("organizations")
-          .select("id, name, slug")
-          .in("id", orgIds)
-          .order("name");
-
-        if (orgErr) throw orgErr;
-
-        const list = orgData || [];
-        setOrgs(list);
-
-        const preferScore = list.find((o) =>
-          String(o.slug || o.name || "").toLowerCase().includes("score")
-        );
-        const pick = preferScore?.id || list?.[0]?.id;
-
-        setSelectedOrgId(pick || null);
-
-        const my = (mems || []).find((m) => String(m.organization_id) === String(pick));
-        setRole(String(my?.role || "viewer").toLowerCase());
-      } catch (e) {
-        console.error(e);
-        setOrgs([]);
-        setSelectedOrgId(null);
-        setRole("viewer");
-      } finally {
-        setLoading(false);
-      }
-    }
-    init();
-  }, [userEmail]);
-
-  useEffect(() => {
-    (async () => {
-      if (!selectedOrgId) return;
-      const { data } = await supabase
-        .from("admin_users")
-        .select("role,is_active")
-        .eq("organization_id", selectedOrgId)
-        .ilike("email", userEmail)
-        .eq("is_active", true)
-        .maybeSingle();
-
-      setRole(String(data?.role || "viewer").toLowerCase());
-    })();
-  }, [selectedOrgId, userEmail]);
-
-  useEffect(() => {
-    let alive = true;
-    const q = globalQuery.trim();
-    if (!q || q.length < 2 || !selectedOrgId) {
-      setGlobalResults({ orders: [], products: [] });
-      return;
-    }
-
-    const t = setTimeout(async () => {
-      try {
-        const [oRes, pRes] = await Promise.all([
-          supabase
-            .from("orders")
-            .select(
-              "id, created_at, customer_name, email, amount_total_mxn, status, stripe_session_id"
-            )
-            .eq("organization_id", selectedOrgId)
-            .or(
-              `customer_name.ilike.%${q}%,email.ilike.%${q}%,id.ilike.%${q}%`
-            )
-            .order("created_at", { ascending: false })
-            .limit(6),
-          supabase
-            .from("products")
-            .select("id, name, sku, price_mxn, stock, is_active")
-            .eq("organization_id", selectedOrgId)
-            .or(`name.ilike.%${q}%,sku.ilike.%${q}%`)
-            .order("created_at", { ascending: false })
-            .limit(6),
-        ]);
-
-        if (!alive) return;
-        setGlobalResults({ orders: oRes?.data || [], products: pRes?.data || [] });
-      } catch {
-        if (!alive) return;
-        setGlobalResults({ orders: [], products: [] });
-      }
-    }, 220);
-
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-  }, [globalQuery, selectedOrgId]);
-
-  useEffect(() => {
     const onKey = (e) => {
-      const k = String(e.key || "").toLowerCase();
-
-      if ((e.ctrlKey || e.metaKey) && k === "k") {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen(true);
-        setTimeout(() => paletteInputRef.current?.focus?.(), 0);
-        return;
+        setTimeout(() => paletteInputRef.current?.focus?.(), 50);
       }
-
-      if (paletteOpen) {
-        if (k === "i") openAi();
-        if (k === "r") forceRefresh();
-      }
+      if (e.key === "Escape") setPaletteOpen(false);
     };
-
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [paletteOpen, openAi, forceRefresh]);
+  }, []);
 
-  const signOut = () => supabase.auth.signOut();
+  useEffect(() => {
+    const q = globalQuery.trim().toLowerCase();
+    if (!q) return setGlobalResults([]);
 
-  if (loading) return <BootScreen />;
+    const results = [];
+    for (const t of ALL_TABS) {
+      if (t.label.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q)) {
+        results.push({ id: `tab-${t.id}`, title: t.label, desc: t.desc });
+      }
+    }
 
-  if (!selectedOrgId) {
-    return <BootstrapGate token={token} onSignOut={signOut} />;
-  }
-
-  const ALL_TABS = [
-    { id: "dashboard", label: "Finanzas", icon: <LayoutDashboard size={20} /> },
-    { id: "orders", label: "Pedidos", icon: <ShoppingCart size={20} /> },
-    { id: "products", label: "Productos", icon: <Package size={20} /> },
-    { id: "crm", label: "Clientes", icon: <Users size={20} /> },
-    { id: "marketing", label: "Marketing", icon: <Megaphone size={20} /> },
-    { id: "users", label: "Equipo", icon: <Shield size={20} /> },
-    { id: "integrations", label: "Integraciones", icon: <Settings size={20} /> },
-  ].filter((t) => hasPerm(role, t.id));
-
-  const activeLabel = ALL_TABS.find((t) => t.id === activeTab)?.label || "Panel";
+    setGlobalResults(results.slice(0, 8));
+  }, [globalQuery]);
 
   return (
-    <div
-      className="flex h-screen overflow-hidden font-sans"
-      style={{
-        background:
-          "linear-gradient(180deg, rgba(14,165,233,0.06), rgba(20,184,166,0.04) 35%, rgba(248,250,252,1) 100%)",
-      }}
-    >
-      {mobileMenuOpen ? (
-        <div
-          className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 md:hidden"
-          onClick={() => setMobileMenuOpen(false)}
-        />
-      ) : null}
+    <div className="min-h-screen bg-slate-50">
+      <MobileNav
+        open={mobileOpen}
+        onClose={() => setMobileOpen(false)}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        onSignOut={onSignOut}
+      />
 
-      <aside
-        className={clsx(
-          "fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 md:translate-x-0 md:static",
-          mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-        )}
-      >
-        <div className="p-6 flex items-center gap-3 border-b border-slate-200 bg-slate-50/70">
-          <BrandMark size={44} />
-          <div className="min-w-0">
-            <h1 className="text-lg font-black text-slate-900 leading-tight tracking-tight truncate">
-              UnicOs
-            </h1>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-              <p className="text-[10px] font-black tracking-widest uppercase text-slate-500">
-                {role}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-4 border-b border-slate-200">
-          <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mb-2 block">
-            Organización activa
-          </label>
-          <div className="relative">
-            <select
-              value={selectedOrgId}
-              onChange={(e) => {
-                setSelectedOrgId(e.target.value);
-                setActiveTab("dashboard");
-                toastShow({ type: "info", text: "Organización actualizada." });
-              }}
-              className="w-full appearance-none bg-white border border-slate-200 rounded-xl py-3 px-4 text-sm font-black text-slate-900 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
-            >
-              {orgs.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown
-              className="absolute right-4 top-3.5 text-slate-400 pointer-events-none"
-              size={16}
-            />
-          </div>
-        </div>
-
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {ALL_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id);
-                setMobileMenuOpen(false);
-              }}
-              className={clsx(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-black transition-all",
-                activeTab === tab.id
-                  ? "text-white shadow-lg"
-                  : "hover:bg-slate-100 text-slate-700"
-              )}
-              style={activeTab === tab.id ? { background: BRAND.grad } : undefined}
-            >
-              <span className={activeTab === tab.id ? "text-white" : "text-slate-400"}>
-                {tab.icon}
-              </span>
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="p-4 border-t border-slate-200 bg-slate-50/70 space-y-2">
-          <button
-            onClick={signOut}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-rose-50 hover:text-rose-700 text-xs font-black text-slate-700 transition-colors"
-          >
-            <LogOut size={14} /> Cerrar sesión
-          </button>
-        </div>
-      </aside>
-
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        <header className="z-20 px-4 md:px-6 py-4 flex justify-between items-center sticky top-0 bg-white/80 backdrop-blur-md border-b border-slate-200">
-          <div className="flex items-center gap-4 min-w-0">
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="md:hidden p-2 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg"
-              aria-label="Abrir menú"
-            >
-              <Menu size={20} />
-            </button>
-
-            <div className="min-w-0">
-              <h2 className="text-xl font-black text-slate-900 tracking-tight truncate">
-                {activeLabel}
-              </h2>
-              <p className="text-xs font-semibold text-slate-500 truncate">{userEmail}</p>
-            </div>
-          </div>
-
-          <div className="relative hidden md:block w-[460px] max-w-[46vw]">
-            <Search className="absolute left-3 top-3 text-slate-400" size={18} />
-            <input
-              ref={paletteInputRef}
-              value={globalQuery}
-              onChange={(e) => setGlobalQuery(e.target.value)}
-              onFocus={() => setPaletteOpen(true)}
-              placeholder="Buscar… (Ctrl/⌘ + K)"
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white font-black text-slate-800 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
-            />
-          </div>
-
-          <div className="flex items-center gap-2 md:gap-3">
-            <button
-              onClick={() => {
-                setPaletteOpen(true);
-                setTimeout(() => paletteInputRef.current?.focus?.(), 0);
-              }}
-              className="md:hidden p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"
-              aria-label="Buscar"
-              title="Buscar"
-            >
-              <Search size={18} />
-            </button>
-
-            <button
-              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"
-              aria-label="Notificaciones"
-              title="Notificaciones"
-            >
-              <Bell size={18} />
-            </button>
-
-            <button
-              onClick={openAi}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl text-white font-black text-xs shadow-sm"
-              style={{ background: BRAND.grad }}
-              title="Unico IA"
-            >
-              <Sparkles size={16} /> IA
-            </button>
-          </div>
-        </header>
-
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24">
-          <div className="max-w-7xl mx-auto space-y-6">
-            {activeTab === "dashboard" && (
-              <DashboardView orgId={selectedOrgId} token={token} toast={toastShow} />
-            )}
-
-            {activeTab === "orders" && (
-              <OrdersAndShippingView
-                orgId={selectedOrgId}
-                token={token}
-                canWrite={canWrite}
-                toast={toastShow}
-              />
-            )}
-
-            {activeTab === "products" && (
-              <ProductsView orgId={selectedOrgId} canWrite={canWrite} toast={toastShow} />
-            )}
-
-            {activeTab === "crm" && <CRMView orgId={selectedOrgId} />}
-
-            {activeTab === "marketing" && (
-              <MarketingView orgId={selectedOrgId} toast={toastShow} />
-            )}
-
-            {activeTab === "users" && (
-              <UsersView
-                orgId={selectedOrgId}
-                token={token}
-                role={role}
-                canInvite={canInvite}
-                toast={toastShow}
-              />
-            )}
-
-            {activeTab === "integrations" && <IntegrationsView token={token} toast={toastShow} />}
-          </div>
-        </div>
-
-        {toast ? <Toast t={toast} /> : null}
-
-        <CommandPalette
-          open={paletteOpen}
-          onClose={() => setPaletteOpen(false)}
-          query={globalQuery}
-          setQuery={setGlobalQuery}
-          inputRef={paletteInputRef}
-          tabs={ALL_TABS}
+      <div className="flex min-h-screen">
+        <SideNav
           activeTab={activeTab}
           setActiveTab={setActiveTab}
-          results={globalResults}
-          canInvite={canInvite}
-          onOpenAi={openAi}
-          onRefresh={forceRefresh}
+          compact={compactNav}
+          onSignOut={onSignOut}
         />
 
-        <AiDock />
-      </main>
+        <main className="flex-1 flex flex-col min-w-0">
+          <header className="sticky top-0 z-40 border-b border-slate-200 bg-white">
+            <div className="px-4 md:px-8 py-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <button
+                  onClick={() => setMobileOpen(true)}
+                  className="md:hidden p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"
+                  aria-label="Menú"
+                  title="Menú"
+                >
+                  <Menu size={18} />
+                </button>
+
+                <button
+                  onClick={() => setCompactNav((v) => !v)}
+                  className="hidden md:inline-flex p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"
+                  aria-label="Compactar navegación"
+                  title="Compactar navegación"
+                >
+                  <Menu size={18} />
+                </button>
+
+                <OrgPicker
+                  orgs={orgs}
+                  selectedOrgId={selectedOrgId}
+                  onSelect={setSelectedOrgId}
+                  role={role}
+                />
+                <RoleChip role={role} />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPaletteOpen(true)}
+                  className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                  title="Buscar (Ctrl/⌘ + K)"
+                  aria-label="Buscar"
+                >
+                  <Search size={16} className="text-slate-400" />
+                  <span className="font-black text-xs">Buscar</span>
+                  <span className="ml-2 text-[10px] font-black text-slate-400 border border-slate-200 rounded px-2 py-0.5">
+                    Ctrl K
+                  </span>
+                </button>
+
+                <button
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700"
+                  aria-label="Notificaciones"
+                  title="Notificaciones"
+                >
+                  <Bell size={18} />
+                </button>
+
+                <button
+                  onClick={openAi}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-white font-black text-xs shadow-sm"
+                  style={{ background: BRAND.grad }}
+                  title="Unico IA"
+                >
+                  <Sparkles size={16} /> IA
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24">
+            <div className="max-w-7xl mx-auto space-y-6">
+              {activeTab === "dashboard" && (
+                <DashboardView orgId={selectedOrgId} token={token} toast={toastShow} />
+              )}
+
+              {activeTab === "orders" && (
+                <OrdersAndShippingView
+                  orgId={selectedOrgId}
+                  token={token}
+                  canWrite={canWrite}
+                  toast={toastShow}
+                />
+              )}
+
+              {activeTab === "products" && (
+                <ProductsView orgId={selectedOrgId} canWrite={canWrite} toast={toastShow} />
+              )}
+
+              {activeTab === "crm" && <CRMView orgId={selectedOrgId} toast={toastShow} />}
+
+              {activeTab === "marketing" && (
+                <MarketingView orgId={selectedOrgId} role={role} toast={toastShow} />
+              )}
+
+              {activeTab === "users" && (
+                <UsersView
+                  orgId={selectedOrgId}
+                  token={token}
+                  role={role}
+                  canInvite={canInvite}
+                  toast={toastShow}
+                />
+              )}
+
+              {activeTab === "integrations" && (
+                <IntegrationsView orgId={selectedOrgId} token={token} toast={toastShow} />
+              )}
+            </div>
+          </div>
+
+          {toast ? <Toast t={toast} /> : null}
+
+          <CommandPalette
+            open={paletteOpen}
+            onClose={() => setPaletteOpen(false)}
+            query={globalQuery}
+            setQuery={setGlobalQuery}
+            inputRef={paletteInputRef}
+            tabs={ALL_TABS}
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            results={globalResults}
+            canInvite={canInvite}
+            onOpenAi={openAi}
+            onRefresh={forceRefresh}
+          />
+
+          <AiDock />
+        </main>
+      </div>
     </div>
   );
 }
@@ -1004,14 +916,15 @@ function BootstrapGate({ token, onSignOut }) {
    DASHBOARD (Stripe + Envía)
    ========================================================= */
 
-function MiniKPI({ label, value, note }) {
+function MiniKPI({ label, value, note, icon }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-300/70 mb-1">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2 flex items-center gap-2">
+        {icon ? <span className="text-slate-400">{icon}</span> : null}
         {label}
       </p>
-      <p className="text-lg font-black text-white">{value}</p>
-      {note ? <p className="text-xs font-semibold text-slate-300/70 mt-1">{note}</p> : null}
+      <p className="text-lg font-black text-slate-900">{value}</p>
+      {note ? <p className="text-xs font-semibold text-slate-500 mt-1">{note}</p> : null}
     </div>
   );
 }
@@ -1021,14 +934,14 @@ function DashboardView({ orgId, token, toast }) {
 
   const [kpi, setKpi] = useState({
     gross: 0,
-    net100: 0,
-    score70: 0,
+    net: 0,
     orders: 0,
     avg: 0,
     stripeFee: 0,
     stripeMode: "estimate",
     enviaCost: 0,
     sessions: [],
+    updatedAt: null,
   });
 
   const load = useCallback(async () => {
@@ -1039,11 +952,11 @@ function DashboardView({ orgId, token, toast }) {
     try {
       const { data: paidOrders } = await supabase
         .from("orders")
-        .select("id, amount_total_mxn, status, stripe_session_id")
+        .select("id, amount_total_mxn, status, stripe_session_id, created_at")
         .eq("organization_id", orgId)
         .in("status", ["paid", "fulfilled"])
         .order("created_at", { ascending: false })
-        .limit(400);
+        .limit(600);
 
       const list = paidOrders || [];
 
@@ -1053,13 +966,13 @@ function DashboardView({ orgId, token, toast }) {
 
       const sessions = list.map((o) => o.stripe_session_id).filter(Boolean);
 
-      // Envía costs
+      // Envía costs (desde shipping_labels.raw)
       let enviaCost = 0;
       if (sessions.length) {
         const { data: labels } = await supabase
           .from("shipping_labels")
           .select("stripe_session_id, raw")
-          .in("stripe_session_id", sessions.slice(0, 200));
+          .in("stripe_session_id", sessions.slice(0, 250));
 
         for (const l of labels || []) {
           const raw = l?.raw || {};
@@ -1068,7 +981,7 @@ function DashboardView({ orgId, token, toast }) {
         }
       }
 
-      // Stripe fees
+      // Stripe fees (real si el endpoint responde; si no, estimación)
       let stripeFee = 0;
       let stripeMode = "estimate";
 
@@ -1080,7 +993,7 @@ function DashboardView({ orgId, token, toast }) {
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify({ org_id: orgId, stripe_session_ids: sessions.slice(0, 120) }),
+            body: JSON.stringify({ org_id: orgId, stripe_session_ids: sessions.slice(0, 150) }),
           });
 
           const j = await res.json().catch(() => ({}));
@@ -1092,18 +1005,25 @@ function DashboardView({ orgId, token, toast }) {
             throw new Error(j?.error || "fee fail");
           }
         } catch {
+          // Fallback: estimación razonable (MX): % + fijo por transacción
           stripeFee = gross * 0.036 + orders * 3;
           stripeMode = "estimate";
         }
       }
 
-      // Neto calculado (100%)
-      const net100 = Math.max(0, gross - stripeFee - enviaCost);
+      const net = Math.max(0, gross - stripeFee - enviaCost);
 
-      // Reglas internas
-      const score70 = Math.max(0, net100 * 0.7);
-
-      setKpi({ gross, net100, score70, orders, avg, stripeFee, stripeMode, enviaCost, sessions });
+      setKpi({
+        gross,
+        net,
+        orders,
+        avg,
+        stripeFee,
+        stripeMode,
+        enviaCost,
+        sessions,
+        updatedAt: new Date().toISOString(),
+      });
     } catch (e) {
       toast?.({ type: "bad", text: String(e?.message || e) });
     } finally {
@@ -1115,45 +1035,73 @@ function DashboardView({ orgId, token, toast }) {
     load();
   }, [load]);
 
+  // Realtime (si está habilitado en tu Supabase)
+  useEffect(() => {
+    if (!orgId) return;
+
+    let ch = null;
+    try {
+      ch = supabase
+        .channel(`kpi-${orgId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "orders", filter: `organization_id=eq.${orgId}` },
+          () => load()
+        )
+        .subscribe();
+    } catch {}
+
+    return () => {
+      try {
+        ch?.unsubscribe?.();
+      } catch {}
+    };
+  }, [orgId, load]);
+
   return (
     <div className="space-y-6">
-      <div className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 shadow-2xl p-6">
+      <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-slate-300/90 text-xs font-black uppercase tracking-widest mb-2 flex items-center gap-2">
-              <Sparkles size={14} className="text-sky-300" /> Ganancia total
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2 flex items-center gap-2">
+              <Sparkles size={14} className="text-sky-600" /> Ganancia neta
             </p>
 
-            <h3 className="text-3xl md:text-4xl font-black text-white tracking-tight">
-              {moneyMXN(kpi.score70)}
+            <h3 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
+              {moneyMXN(kpi.net)}
             </h3>
 
-            <p className="text-sm font-semibold text-slate-300/80 mt-1">
-              Bruto − comisión Stripe − costo Envía = Neto.
+            <p className="text-sm font-semibold text-slate-600 mt-1">
+              Neto = Ventas brutas − Comisión Stripe − Costo Envía.
+            </p>
+
+            <p className="text-xs font-semibold text-slate-500 mt-2">
+              {kpi.updatedAt ? `Última actualización: ${new Date(kpi.updatedAt).toLocaleString("es-MX")}` : "—"}
             </p>
           </div>
 
           <button
             onClick={load}
-            className="px-4 py-2 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white font-black text-sm flex items-center gap-2"
+            className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm flex items-center gap-2"
           >
             <RefreshCcw size={16} className={busy ? "animate-spin" : ""} /> Actualizar
           </button>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-6 mt-6 border-t border-white/10">
-          <MiniKPI label="Ventas brutas" value={moneyMXN(kpi.gross)} />
-          <MiniKPI label="Pedidos pagados" value={num(kpi.orders)} />
-          <MiniKPI label="Ticket promedio" value={moneyMXN(kpi.avg)} />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-6 mt-6 border-t border-slate-200">
+          <MiniKPI label="Ventas brutas" value={moneyMXN(kpi.gross)} icon={<Wallet size={14} />} />
+          <MiniKPI label="Pedidos pagados" value={num(kpi.orders)} icon={<ShoppingCart size={14} />} />
+          <MiniKPI label="Ticket promedio" value={moneyMXN(kpi.avg)} icon={<Receipt size={14} />} />
           <MiniKPI
             label="Comisión Stripe"
             value={moneyMXN(kpi.stripeFee)}
             note={kpi.stripeMode === "stripe" ? "Real" : "Estimado"}
+            icon={<CreditCard size={14} />}
           />
-          <MiniKPI label="Costo Envía" value={moneyMXN(kpi.enviaCost)} />
-          <MiniKPI label="Estado" value={busy ? "Cargando…" : "Listo"} />
-          <MiniKPI label="Base" value="orders + shipping_labels" />
-          <MiniKPI label="Modo" value="multi-org" />
+          <MiniKPI label="Costo Envía" value={moneyMXN(kpi.enviaCost)} icon={<Truck size={14} />} />
+          <MiniKPI label="Estado" value={busy ? "Cargando…" : "Listo"} icon={<Activity size={14} />} />
+          <MiniKPI label="Base" value="orders + shipping_labels" icon={<Boxes size={14} />} />
+          <MiniKPI label="Modo" value="multi-org" icon={<Store size={14} />} />
         </div>
       </div>
 
@@ -1161,7 +1109,6 @@ function DashboardView({ orgId, token, toast }) {
     </div>
   );
 }
-
 /* =========================================================
    ACTIVITY / AUDIT
    ========================================================= */
@@ -1209,27 +1156,29 @@ function ActivityPanel({ orgId, token }) {
         </button>
       </div>
 
-      {rows?.length ? (
-        <div className="space-y-2">
-          {rows.map((r) => (
-            <div key={r.id} className="p-3 rounded-2xl border border-slate-200 bg-slate-50/60">
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-black text-slate-900 text-sm truncate">
-                  {r.action}{" "}
-                  <span className="text-slate-500 font-semibold">• {r.entity || "—"}</span>
+      <div className="space-y-2">
+        {(rows || []).map((r) => (
+          <div key={r.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-black text-slate-900">
+                  {r.action || "Evento"}
                 </p>
-                <p className="text-xs font-bold text-slate-500">
-                  {new Date(r.created_at).toLocaleString("es-MX")}
+                <p className="text-xs font-semibold text-slate-600 mt-1">
+                  {r.summary || r.entity || "—"}
                 </p>
               </div>
-              <p className="text-xs font-semibold text-slate-600 mt-1">{r.summary || "—"}</p>
-              <p className="text-[11px] font-bold text-slate-500 mt-1">{r.actor_email || "—"}</p>
+              <p className="text-xs font-semibold text-slate-500">
+                {r.created_at ? new Date(r.created_at).toLocaleString("es-MX") : "—"}
+              </p>
             </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm font-semibold text-slate-500">Sin eventos.</p>
-      )}
+          </div>
+        ))}
+
+        {!rows?.length ? (
+          <p className="text-sm font-semibold text-slate-500">Sin actividad.</p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -1238,36 +1187,10 @@ function ActivityPanel({ orgId, token }) {
    ORDERS + SHIPPING
    ========================================================= */
 
-const STATUS_BADGE = {
-  pending: "bg-slate-100 text-slate-700 border-slate-200",
-  pending_payment: "bg-amber-50 text-amber-900 border-amber-200",
-  paid: "bg-emerald-50 text-emerald-900 border-emerald-200",
-  payment_failed: "bg-rose-50 text-rose-900 border-rose-200",
-  fulfilled: "bg-sky-50 text-sky-900 border-sky-200",
-  cancelled: "bg-slate-100 text-slate-700 border-slate-200",
-  refunded: "bg-purple-50 text-purple-900 border-purple-200",
-};
-
-function StatusPill({ status }) {
-  const s = String(status || "pending").toLowerCase();
-  return (
-    <span
-      className={clsx(
-        "inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-black",
-        STATUS_BADGE[s] || STATUS_BADGE.pending
-      )}
-    >
-      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
-      {s.toUpperCase()}
-    </span>
-  );
-}
-
 function OrdersAndShippingView({ orgId, token, canWrite, toast }) {
   const [busy, setBusy] = useState(false);
   const [orders, setOrders] = useState([]);
-  const [selected, setSelected] = useState(new Set());
-  const [q, setQ] = useState("");
+  const [labels, setLabels] = useState([]);
 
   const load = useCallback(async () => {
     if (!orgId) return;
@@ -1275,230 +1198,136 @@ function OrdersAndShippingView({ orgId, token, canWrite, toast }) {
     setBusy(true);
 
     try {
-      const query = q.trim();
-      let req = supabase
+      const { data: o } = await supabase
         .from("orders")
-        .select("id, created_at, customer_name, email, amount_total_mxn, status, stripe_session_id")
+        .select("id, created_at, email, customer_name, amount_total_mxn, status, stripe_session_id, promo_code")
         .eq("organization_id", orgId)
         .order("created_at", { ascending: false })
         .limit(200);
 
-      if (query.length >= 2) {
-        req = req.or(`customer_name.ilike.%${query}%,email.ilike.%${query}%,id.ilike.%${query}%`);
+      const sessions = (o || []).map((x) => x.stripe_session_id).filter(Boolean);
+
+      let l = [];
+      if (sessions.length) {
+        const { data } = await supabase
+          .from("shipping_labels")
+          .select("id, created_at, stripe_session_id, carrier, tracking_number, label_url, status, raw")
+          .in("stripe_session_id", sessions.slice(0, 200))
+          .order("created_at", { ascending: false })
+          .limit(200);
+
+        l = data || [];
       }
 
-      const { data, error } = await req;
-      if (error) throw error;
-
-      setOrders(data || []);
-      setSelected(new Set());
+      setOrders(o || []);
+      setLabels(l || []);
     } catch (e) {
       toast?.({ type: "bad", text: String(e?.message || e) });
     } finally {
       setBusy(false);
     }
-  }, [orgId, q, toast]);
+  }, [orgId, toast]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const toggle = (id) => {
-    setSelected((s) => {
-      const n = new Set(s);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-  };
-
-  const bulkUpdate = async (status) => {
-    if (!canWrite) return toast?.({ type: "warn", text: "No tienes permisos para editar." });
-    const ids = Array.from(selected || []);
-    if (!ids.length) return toast?.({ type: "warn", text: "Selecciona pedidos primero." });
-
-    try {
-      const res = await fetch("/api/orders/bulk-update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ org_id: orgId, order_ids: ids, patch: { status } }),
-      });
-
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j?.ok) throw new Error(j?.error || "No se pudo actualizar.");
-
-      toast?.({ type: "ok", text: "Pedidos actualizados." });
-      await load();
-    } catch (e) {
-      toast?.({ type: "bad", text: String(e?.message || e) });
+  const labelBySession = useMemo(() => {
+    const map = new Map();
+    for (const l of labels || []) {
+      if (l?.stripe_session_id && !map.has(l.stripe_session_id)) map.set(l.stripe_session_id, l);
     }
-  };
-
-  const updateOne = async (orderId, status) => {
-    if (!canWrite) return toast?.({ type: "warn", text: "No tienes permisos para editar." });
-
-    try {
-      const res = await fetch("/api/orders/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ org_id: orgId, order_id: orderId, patch: { status } }),
-      });
-
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok || !j?.ok) throw new Error(j?.error || "No se pudo actualizar.");
-
-      toast?.({ type: "ok", text: "Pedido actualizado." });
-      await load();
-    } catch (e) {
-      toast?.({ type: "bad", text: String(e?.message || e) });
-    }
-  };
-
-  const allSelected = selected.size > 0 && orders?.length && selected.size === orders.length;
+    return map;
+  }, [labels]);
 
   return (
     <div className="space-y-6">
       <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">
               Operación
             </p>
-            <h4 className="text-lg font-black text-slate-900">Pedidos + Envíos</h4>
+            <h4 className="text-lg font-black text-slate-900">Pedidos & Envíos</h4>
             <p className="text-sm font-semibold text-slate-600">
-              Actualiza estado y gestiona acciones masivas.
+              Pedidos desde Stripe + guías desde Envía (si existen).
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 text-slate-400" size={18} />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Buscar…"
-                className="w-72 max-w-[80vw] pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white font-black text-slate-800 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
-              />
-            </div>
-
-            <button
-              onClick={load}
-              className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm flex items-center gap-2"
-            >
-              <RefreshCcw size={16} className={busy ? "animate-spin" : ""} /> Actualizar
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center gap-2">
           <button
-            disabled={!canWrite}
-            onClick={() => bulkUpdate("paid")}
-            className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-xs flex items-center gap-2 disabled:opacity-60"
+            onClick={load}
+            className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm flex items-center gap-2"
           >
-            <CheckCircle2 size={14} className="text-emerald-600" /> Marcar pagados
+            <RefreshCcw size={16} className={busy ? "animate-spin" : ""} /> Actualizar
           </button>
-
-          <button
-            disabled={!canWrite}
-            onClick={() => bulkUpdate("fulfilled")}
-            className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-xs flex items-center gap-2 disabled:opacity-60"
-          >
-            <Truck size={14} className="text-sky-600" /> Marcar enviados
-          </button>
-
-          <button
-            disabled={!canWrite}
-            onClick={() => bulkUpdate("cancelled")}
-            className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-xs flex items-center gap-2 disabled:opacity-60"
-          >
-            <X size={14} className="text-rose-600" /> Cancelar
-          </button>
-
-          <span className="ml-auto text-xs font-black text-slate-500">
-            Seleccionados: {selected.size}
-          </span>
         </div>
 
         <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[820px]">
+          <table className="w-full min-w-[980px]">
             <thead>
               <tr className="text-left text-[10px] font-black uppercase tracking-widest text-slate-500">
-                <th className="py-2 pr-3 w-10">
-                  <input
-                    type="checkbox"
-                    checked={!!allSelected}
-                    onChange={() => {
-                      if (selected.size === orders.length) setSelected(new Set());
-                      else setSelected(new Set(orders.map((o) => o.id)));
-                    }}
-                  />
-                </th>
-                <th className="py-2 pr-3">Pedido</th>
+                <th className="py-2 pr-3">Fecha</th>
                 <th className="py-2 pr-3">Cliente</th>
                 <th className="py-2 pr-3">Total</th>
                 <th className="py-2 pr-3">Estado</th>
-                <th className="py-2 pr-3">Fecha</th>
-                <th className="py-2 pr-3 text-right">Acciones</th>
+                <th className="py-2 pr-3">Cupón</th>
+                <th className="py-2 pr-3">Envío</th>
+                <th className="py-2 pr-3 text-right">Acción</th>
               </tr>
             </thead>
 
             <tbody className="text-sm">
-              {(orders || []).map((o) => (
-                <tr key={o.id} className="border-t border-slate-200">
-                  <td className="py-3 pr-3">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(o.id)}
-                      onChange={() => toggle(o.id)}
-                    />
-                  </td>
+              {(orders || []).map((o) => {
+                const l = o?.stripe_session_id ? labelBySession.get(o.stripe_session_id) : null;
 
-                  <td className="py-3 pr-3 font-black text-slate-900">
-                    #{String(o.id).split("-")[0].toUpperCase()}
-                    <p className="text-xs font-semibold text-slate-500">
-                      {o.stripe_session_id ? `Stripe: ${o.stripe_session_id}` : "—"}
-                    </p>
-                  </td>
-
-                  <td className="py-3 pr-3">
-                    <p className="font-black text-slate-900">{o.customer_name || "—"}</p>
-                    <p className="text-xs font-semibold text-slate-500">{o.email || "—"}</p>
-                  </td>
-
-                  <td className="py-3 pr-3 font-black text-slate-900">{moneyMXN(o.amount_total_mxn)}</td>
-
-                  <td className="py-3 pr-3">
-                    <StatusPill status={o.status} />
-                  </td>
-
-                  <td className="py-3 pr-3 text-xs font-semibold text-slate-500">
-                    {new Date(o.created_at).toLocaleString("es-MX")}
-                  </td>
-
-                  <td className="py-3 pr-3 text-right">
-                    <div className="inline-flex items-center gap-2">
-                      <button
-                        disabled={!canWrite}
-                        onClick={() => updateOne(o.id, "fulfilled")}
-                        className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-xs disabled:opacity-60"
-                        title="Marcar enviado"
-                      >
-                        <Truck size={14} className="inline mr-1 text-sky-600" /> Enviado
-                      </button>
-
-                      <button
-                        disabled={!canWrite}
-                        onClick={() => updateOne(o.id, "refunded")}
-                        className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-xs disabled:opacity-60"
-                        title="Reembolso"
-                      >
-                        <ArrowDownRight size={14} className="inline mr-1 text-purple-600" /> Refund
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                return (
+                  <tr key={o.id} className="border-t border-slate-200">
+                    <td className="py-3 pr-3 text-xs font-semibold text-slate-500">
+                      {o.created_at ? new Date(o.created_at).toLocaleString("es-MX") : "—"}
+                    </td>
+                    <td className="py-3 pr-3">
+                      <p className="font-black text-slate-900">{o.customer_name || "—"}</p>
+                      <p className="text-xs font-semibold text-slate-500">{o.email || "—"}</p>
+                    </td>
+                    <td className="py-3 pr-3 font-black text-slate-900">{moneyMXN(o.amount_total_mxn)}</td>
+                    <td className="py-3 pr-3">
+                      <span className={clsx(
+                        "inline-flex items-center px-3 py-1 rounded-full border text-xs font-black",
+                        ["paid", "fulfilled"].includes(String(o.status || "").toLowerCase())
+                          ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+                          : "bg-slate-100 text-slate-700 border-slate-200"
+                      )}>
+                        {String(o.status || "pending").toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-3 font-black text-slate-900">{o.promo_code || "—"}</td>
+                    <td className="py-3 pr-3">
+                      {l?.tracking_number ? (
+                        <div>
+                          <p className="font-black text-slate-900">{l.carrier || "Carrier"}</p>
+                          <p className="text-xs font-semibold text-slate-500">{l.tracking_number}</p>
+                        </div>
+                      ) : (
+                        <span className="text-xs font-semibold text-slate-500">—</span>
+                      )}
+                    </td>
+                    <td className="py-3 pr-3 text-right">
+                      {l?.label_url ? (
+                        <a
+                          href={l.label_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-xs inline-flex items-center gap-2"
+                        >
+                          <ExternalLink size={14} /> Ver guía
+                        </a>
+                      ) : (
+                        <span className="text-xs font-semibold text-slate-500">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
 
               {!orders?.length ? (
                 <tr>
@@ -1628,40 +1457,1133 @@ function ProductsView({ orgId, canWrite, toast }) {
    CRM / MARKETING / USERS / INTEGRATIONS
    ========================================================= */
 
-function CRMView() {
+function Badge({ children, tone = "slate" }) {
+  const cls =
+    tone === "emerald"
+      ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+      : tone === "sky"
+      ? "bg-sky-50 text-sky-900 border-sky-200"
+      : tone === "amber"
+      ? "bg-amber-50 text-amber-900 border-amber-200"
+      : tone === "rose"
+      ? "bg-rose-50 text-rose-900 border-rose-200"
+      : "bg-slate-100 text-slate-800 border-slate-200";
+
   return (
-    <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
-      <h4 className="text-lg font-black text-slate-900">Clientes</h4>
-      <p className="text-sm font-semibold text-slate-600 mt-1">Módulo listo para crecer.</p>
+    <span className={clsx("inline-flex items-center px-3 py-1 rounded-full border text-xs font-black", cls)}>
+      {children}
+    </span>
+  );
+}
+
+/* ---------------------------
+   CRM (clientes reales desde orders)
+--------------------------- */
+function CRMView({ orgId, toast }) {
+  const [busy, setBusy] = useState(false);
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState([]);
+  const [selected, setSelected] = useState(null);
+
+  const load = useCallback(async () => {
+    if (!orgId) return;
+    setBusy(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("orders")
+        .select("id, created_at, email, customer_name, phone, amount_total_mxn, status")
+        .eq("organization_id", orgId)
+        .order("created_at", { ascending: false })
+        .limit(1200);
+
+      if (error) throw error;
+
+      const map = new Map();
+
+      for (const o of data || []) {
+        const email = normEmail(o.email);
+        if (!email) continue;
+
+        const isPaid = ["paid", "fulfilled"].includes(String(o.status || "").toLowerCase());
+        const total = isPaid ? num(o.amount_total_mxn) : 0;
+
+        const cur = map.get(email) || {
+          email,
+          name: o.customer_name || "",
+          phone: o.phone || "",
+          orders: 0,
+          paidOrders: 0,
+          spent: 0,
+          lastAt: null,
+          firstAt: null,
+        };
+
+        cur.orders += 1;
+        if (isPaid) cur.paidOrders += 1;
+        cur.spent += total;
+
+        const ts = o.created_at ? new Date(o.created_at).getTime() : 0;
+        if (!cur.lastAt || ts > cur.lastAt) {
+          cur.lastAt = ts;
+          if (!cur.name && o.customer_name) cur.name = o.customer_name;
+          if (!cur.phone && o.phone) cur.phone = o.phone;
+        }
+        if (!cur.firstAt || ts < cur.firstAt) cur.firstAt = ts;
+
+        map.set(email, cur);
+      }
+
+      const list = Array.from(map.values()).sort((a, b) => (b.spent - a.spent) || (b.lastAt - a.lastAt));
+      setRows(list);
+
+      if (selected && !map.has(selected)) setSelected(null);
+    } catch (e) {
+      toast?.({ type: "bad", text: String(e?.message || e) });
+      setRows([]);
+    } finally {
+      setBusy(false);
+    }
+  }, [orgId, toast, selected]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return rows;
+    return rows.filter((r) => (r.email || "").includes(s) || (r.name || "").toLowerCase().includes(s));
+  }, [rows, q]);
+
+  const selectedObj = useMemo(() => filtered.find((r) => r.email === selected) || null, [filtered, selected]);
+
+  const segment = (c) => {
+    const now = Date.now();
+    const days14 = 14 * 24 * 3600 * 1000;
+    if (c.spent >= 10000) return { t: "VIP", tone: "emerald" };
+    if (c.paidOrders >= 3) return { t: "Recurrente", tone: "sky" };
+    if (c.firstAt && now - c.firstAt < days14) return { t: "Nuevo", tone: "amber" };
+    return { t: "Cliente", tone: "slate" };
+  };
+
+  return (
+    <div className="grid lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">CRM</p>
+            <h4 className="text-lg font-black text-slate-900">Clientes</h4>
+            <p className="text-sm font-semibold text-slate-600">
+              Basado en pedidos reales. Segmenta, busca y revisa historial.
+            </p>
+          </div>
+
+          <button
+            onClick={load}
+            className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm flex items-center gap-2"
+          >
+            <RefreshCcw size={16} className={busy ? "animate-spin" : ""} /> Actualizar
+          </button>
+        </div>
+
+        <div className="mt-5 flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-3 text-slate-400" size={18} />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Buscar por nombre o email…"
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white font-black text-slate-800 outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+            />
+          </div>
+          <Badge tone="slate">{filtered.length} clientes</Badge>
+        </div>
+
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[880px]">
+            <thead>
+              <tr className="text-left text-[10px] font-black uppercase tracking-widest text-slate-500">
+                <th className="py-2 pr-3">Cliente</th>
+                <th className="py-2 pr-3">Email</th>
+                <th className="py-2 pr-3">Pedidos</th>
+                <th className="py-2 pr-3">Pagados</th>
+                <th className="py-2 pr-3">Total</th>
+                <th className="py-2 pr-3">Última compra</th>
+                <th className="py-2 pr-3 text-right">Acción</th>
+              </tr>
+            </thead>
+
+            <tbody className="text-sm">
+              {filtered.map((c) => {
+                const seg = segment(c);
+                return (
+                  <tr key={c.email} className="border-t border-slate-200">
+                    <td className="py-3 pr-3">
+                      <p className="font-black text-slate-900">{c.name || "—"}</p>
+                      <div className="mt-1">
+                        <Badge tone={seg.tone}>{seg.t}</Badge>
+                      </div>
+                    </td>
+                    <td className="py-3 pr-3 font-semibold text-slate-700">{c.email}</td>
+                    <td className="py-3 pr-3 font-black text-slate-900">{c.orders}</td>
+                    <td className="py-3 pr-3 font-black text-slate-900">{c.paidOrders}</td>
+                    <td className="py-3 pr-3 font-black text-slate-900">{moneyMXN(c.spent)}</td>
+                    <td className="py-3 pr-3 text-xs font-semibold text-slate-500">
+                      {c.lastAt ? new Date(c.lastAt).toLocaleString("es-MX") : "—"}
+                    </td>
+                    <td className="py-3 pr-3 text-right">
+                      <button
+                        onClick={() => setSelected(c.email)}
+                        className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-xs"
+                      >
+                        Ver
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {!filtered.length ? (
+                <tr>
+                  <td colSpan={7} className="py-10 text-center text-sm font-semibold text-slate-500">
+                    Sin clientes (o no hay pedidos aún).
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Detalle</p>
+        <h4 className="text-lg font-black text-slate-900">Cliente</h4>
+
+        {!selectedObj ? (
+          <p className="text-sm font-semibold text-slate-600 mt-3">
+            Selecciona un cliente para ver datos rápidos.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-black text-slate-900">{selectedObj.name || "—"}</p>
+              <p className="text-xs font-semibold text-slate-600 mt-1">{selectedObj.email}</p>
+              {selectedObj.phone ? (
+                <p className="text-xs font-semibold text-slate-600 mt-1">Tel: {selectedObj.phone}</p>
+              ) : null}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <MiniKPI label="Pedidos" value={selectedObj.orders} icon={<ClipboardList size={14} />} />
+              <MiniKPI label="Pagados" value={selectedObj.paidOrders} icon={<CheckCircle2 size={14} />} />
+              <MiniKPI label="Total" value={moneyMXN(selectedObj.spent)} icon={<PiggyBank size={14} />} />
+              <MiniKPI
+                label="Última compra"
+                value={selectedObj.lastAt ? new Date(selectedObj.lastAt).toLocaleDateString("es-MX") : "—"}
+                icon={<Clock size={14} />}
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(selectedObj.email);
+                  } catch {}
+                  toast?.({ type: "ok", text: "Email copiado." });
+                }}
+                className="flex-1 px-4 py-3 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm flex items-center justify-center gap-2"
+              >
+                <Copy size={16} /> Copiar email
+              </button>
+
+              {selectedObj.phone ? (
+                <a
+                  className="flex-1 px-4 py-3 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-2"
+                  style={{ background: BRAND.grad }}
+                  href={`https://wa.me/${encodeURIComponent(String(selectedObj.phone).replace(/[^\d]/g, ""))}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <Send size={16} /> WhatsApp
+                </a>
+              ) : null}
+            </div>
+
+            <button
+              onClick={() => setSelected(null)}
+              className="w-full px-4 py-3 rounded-2xl bg-rose-50 border border-rose-200 hover:bg-rose-100 font-black text-rose-800 text-sm"
+            >
+              Cerrar detalle
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function MarketingView() {
+/* ---------------------------
+   MARKETING (banner + pixel + cupones DB)
+--------------------------- */
+function MarketingView({ orgId, role, toast }) {
+  const canEdit = ["owner", "admin", "marketing"].includes(String(role || "").toLowerCase());
+
+  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [settings, setSettings] = useState({
+    promo_active: false,
+    promo_text: "",
+    pixel_id: "",
+    updated_at: null,
+  });
+
+  const [promoSupported, setPromoSupported] = useState(true);
+  const [rulesBusy, setRulesBusy] = useState(false);
+  const [rules, setRules] = useState([]);
+  const [newRule, setNewRule] = useState({
+    code: "",
+    type: "percent",
+    value: 0.1,
+    description: "",
+    active: true,
+    min_amount_mxn: 0,
+    expires_at: "",
+  });
+
+  const loadSettings = useCallback(async () => {
+    if (!orgId) return;
+    setBusy(true);
+    try {
+      const { data, error } = await supabase
+        .from("site_settings")
+        .select("organization_id, promo_active, promo_text, pixel_id, updated_at")
+        .eq("organization_id", orgId)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      setSettings({
+        promo_active: !!data?.promo_active,
+        promo_text: data?.promo_text || "",
+        pixel_id: data?.pixel_id || "",
+        updated_at: data?.updated_at || null,
+      });
+    } catch (e) {
+      toast?.({ type: "bad", text: String(e?.message || e) });
+    } finally {
+      setBusy(false);
+    }
+  }, [orgId, toast]);
+
+  const saveSettings = useCallback(async () => {
+    if (!orgId) return;
+    if (!canEdit) {
+      toast?.({ type: "warn", text: "Tu rol no puede editar Marketing." });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        organization_id: orgId,
+        promo_active: !!settings.promo_active,
+        promo_text: String(settings.promo_text || ""),
+        pixel_id: String(settings.pixel_id || ""),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.from("site_settings").upsert(payload, {
+        onConflict: "organization_id",
+      });
+
+      if (error) throw error;
+
+      toast?.({ type: "ok", text: "Marketing guardado." });
+      await loadSettings();
+    } catch (e) {
+      toast?.({ type: "bad", text: String(e?.message || e) });
+    } finally {
+      setSaving(false);
+    }
+  }, [orgId, settings, canEdit, toast, loadSettings]);
+
+  const loadRules = useCallback(async () => {
+    if (!orgId) return;
+    setRulesBusy(true);
+    try {
+      const { data, error } = await supabase
+        .from("promo_rules")
+        .select("id, code, type, value, description, active, min_amount_mxn, expires_at, updated_at, created_at")
+        .eq("organization_id", orgId)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (error) {
+        setPromoSupported(false);
+        setRules([]);
+        return;
+      }
+
+      setPromoSupported(true);
+      setRules(data || []);
+    } catch {
+      setPromoSupported(false);
+      setRules([]);
+    } finally {
+      setRulesBusy(false);
+    }
+  }, [orgId]);
+
+  const addRule = useCallback(async () => {
+    if (!canEdit) {
+      toast?.({ type: "warn", text: "Tu rol no puede editar cupones." });
+      return;
+    }
+
+    const code = String(newRule.code || "").trim().toUpperCase();
+    if (!code) {
+      toast?.({ type: "warn", text: "Código inválido." });
+      return;
+    }
+
+    setRulesBusy(true);
+    try {
+      const payload = {
+        organization_id: orgId,
+        code,
+        type: String(newRule.type || "percent"),
+        value: num(newRule.value),
+        description: String(newRule.description || ""),
+        active: !!newRule.active,
+        min_amount_mxn: num(newRule.min_amount_mxn),
+        expires_at: newRule.expires_at ? new Date(newRule.expires_at).toISOString() : null,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.from("promo_rules").upsert(payload, {
+        onConflict: "organization_id,code",
+      });
+
+      if (error) throw error;
+
+      setNewRule({
+        code: "",
+        type: "percent",
+        value: 0.1,
+        description: "",
+        active: true,
+        min_amount_mxn: 0,
+        expires_at: "",
+      });
+
+      toast?.({ type: "ok", text: "Cupón guardado." });
+      await loadRules();
+    } catch (e) {
+      toast?.({ type: "bad", text: String(e?.message || e) });
+    } finally {
+      setRulesBusy(false);
+    }
+  }, [orgId, newRule, canEdit, toast, loadRules]);
+
+  const toggleRule = useCallback(
+    async (id, active) => {
+      if (!canEdit) return toast?.({ type: "warn", text: "Sin permisos." });
+
+      setRulesBusy(true);
+      try {
+        const { error } = await supabase
+          .from("promo_rules")
+          .update({ active: !!active, updated_at: new Date().toISOString() })
+          .eq("id", id);
+
+        if (error) throw error;
+        await loadRules();
+      } catch (e) {
+        toast?.({ type: "bad", text: String(e?.message || e) });
+      } finally {
+        setRulesBusy(false);
+      }
+    },
+    [canEdit, toast, loadRules]
+  );
+
+  useEffect(() => {
+    loadSettings();
+    loadRules();
+  }, [loadSettings, loadRules]);
+
   return (
-    <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
-      <h4 className="text-lg font-black text-slate-900">Marketing</h4>
-      <p className="text-sm font-semibold text-slate-600 mt-1">Módulo listo para crecer.</p>
+    <div className="grid lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Marketing</p>
+            <h4 className="text-lg font-black text-slate-900">Banner + Pixel</h4>
+            <p className="text-sm font-semibold text-slate-600">
+              Cambios rápidos sin tocar código (fácil para personas no técnicas).
+            </p>
+          </div>
+
+          <button
+            onClick={loadSettings}
+            className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm flex items-center gap-2"
+          >
+            <RefreshCcw size={16} className={busy ? "animate-spin" : ""} /> Actualizar
+          </button>
+        </div>
+
+        <div className="mt-6 grid md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mb-2 block">
+              Pixel ID (Meta/GA)
+            </label>
+            <input
+              value={settings.pixel_id}
+              onChange={(e) => setSettings((s) => ({ ...s, pixel_id: e.target.value }))}
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 font-black outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+              placeholder="1234567890"
+              disabled={!canEdit}
+            />
+          </div>
+
+          <div className="flex items-end justify-between gap-3">
+            <label className="inline-flex items-center gap-2 text-sm font-black text-slate-800">
+              <input
+                type="checkbox"
+                checked={!!settings.promo_active}
+                onChange={(e) => setSettings((s) => ({ ...s, promo_active: e.target.checked }))}
+                disabled={!canEdit}
+              />
+              Activar banner promo
+            </label>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mb-2 block">
+              Texto del banner
+            </label>
+            <input
+              value={settings.promo_text}
+              onChange={(e) => setSettings((s) => ({ ...s, promo_text: e.target.value }))}
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 font-black outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+              placeholder="🔥 ENVÍOS NACIONALES E INTERNACIONALES 🔥"
+              disabled={!canEdit}
+            />
+
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-xs font-black text-slate-700 mb-2">Vista previa</p>
+              {settings.promo_active ? (
+                <div className="rounded-xl px-4 py-3 text-white font-black text-sm" style={{ background: BRAND.grad }}>
+                  {settings.promo_text || "Promo activa"}
+                </div>
+              ) : (
+                <p className="text-sm font-semibold text-slate-600">Banner desactivado.</p>
+              )}
+              <p className="text-xs font-semibold text-slate-500 mt-3">
+                {settings.updated_at ? `Último guardado: ${new Date(settings.updated_at).toLocaleString("es-MX")}` : "—"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 flex items-center gap-2">
+          <button
+            onClick={saveSettings}
+            disabled={!canEdit || saving}
+            className="px-5 py-3 rounded-2xl text-white font-black shadow-sm disabled:opacity-60"
+            style={{ background: BRAND.grad }}
+          >
+            {saving ? "Guardando…" : "Guardar cambios"}
+          </button>
+
+          {!canEdit ? <Badge tone="amber">Tu rol no puede editar Marketing</Badge> : null}
+        </div>
+      </div>
+
+      <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Cupones</p>
+        <h4 className="text-lg font-black text-slate-900">Reglas de descuento</h4>
+
+        {!promoSupported ? (
+          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-sm font-black text-amber-900">Falta tabla promo_rules</p>
+            <p className="text-sm font-semibold text-amber-800 mt-1">
+              Para administrar cupones desde UnicOs, crea la tabla <span className="font-black">promo_rules</span> en Supabase.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="mt-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mb-2 block">
+                    Código
+                  </label>
+                  <input
+                    value={newRule.code}
+                    onChange={(e) => setNewRule((s) => ({ ...s, code: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 font-black outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+                    placeholder="SCORE10"
+                    disabled={!canEdit}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mb-2 block">
+                    Tipo
+                  </label>
+                  <select
+                    value={newRule.type}
+                    onChange={(e) => setNewRule((s) => ({ ...s, type: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 font-black outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600 bg-white"
+                    disabled={!canEdit}
+                  >
+                    <option value="percent">Porcentaje</option>
+                    <option value="fixed_mxn">Monto fijo (MXN)</option>
+                    <option value="free_shipping">Envío gratis</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mb-2 block">
+                    Valor
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newRule.value}
+                    onChange={(e) => setNewRule((s) => ({ ...s, value: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 font-black outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+                    disabled={!canEdit}
+                  />
+                  <p className="text-xs font-semibold text-slate-500 mt-1">percent: 0.10 = 10%</p>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mb-2 block">
+                    Mínimo (MXN)
+                  </label>
+                  <input
+                    type="number"
+                    step="1"
+                    value={newRule.min_amount_mxn}
+                    onChange={(e) => setNewRule((s) => ({ ...s, min_amount_mxn: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 font-black outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+                    disabled={!canEdit}
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mb-2 block">
+                    Descripción
+                  </label>
+                  <input
+                    value={newRule.description}
+                    onChange={(e) => setNewRule((s) => ({ ...s, description: e.target.value }))}
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 font-black outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+                    placeholder="10% OFF Fans"
+                    disabled={!canEdit}
+                  />
+                </div>
+
+                <div className="col-span-2 flex items-center justify-between">
+                  <label className="inline-flex items-center gap-2 text-sm font-black text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={!!newRule.active}
+                      onChange={(e) => setNewRule((s) => ({ ...s, active: e.target.checked }))}
+                      disabled={!canEdit}
+                    />
+                    Activo
+                  </label>
+
+                  <div className="flex items-center gap-2">
+                    <Calendar size={16} className="text-slate-400" />
+                    <input
+                      type="date"
+                      value={newRule.expires_at}
+                      onChange={(e) => setNewRule((s) => ({ ...s, expires_at: e.target.value }))}
+                      className="rounded-xl border border-slate-200 px-4 py-2 font-black outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+                      disabled={!canEdit}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={addRule}
+                disabled={!canEdit || rulesBusy}
+                className="w-full px-5 py-3 rounded-2xl text-white font-black shadow-sm disabled:opacity-60"
+                style={{ background: BRAND.grad }}
+              >
+                {rulesBusy ? "Guardando…" : "Guardar cupón"}
+              </button>
+            </div>
+
+            <div className="mt-6">
+              <p className="text-xs font-black text-slate-700 mb-2">Cupones existentes</p>
+
+              <div className="space-y-2">
+                {(rules || []).map((r) => (
+                  <div key={r.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-black text-slate-900 flex items-center gap-2">
+                          <Tag size={16} className="text-slate-400" />
+                          {String(r.code || "").toUpperCase()}
+                          {r.active ? <Badge tone="emerald">Activo</Badge> : <Badge tone="slate">Off</Badge>}
+                        </p>
+                        <p className="text-xs font-semibold text-slate-600 mt-1">{r.description || "—"}</p>
+                        <p className="text-xs font-semibold text-slate-500 mt-1">
+                          Tipo: <span className="font-black">{r.type}</span> · Valor:{" "}
+                          <span className="font-black">
+                            {r.type === "percent" ? `${Math.round(num(r.value) * 100)}%` : moneyMXN(r.value)}
+                          </span>{" "}
+                          · Mínimo: <span className="font-black">{moneyMXN(r.min_amount_mxn)}</span>
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => toggleRule(r.id, !r.active)}
+                        disabled={!canEdit || rulesBusy}
+                        className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-xs disabled:opacity-60"
+                        title="Activar / Desactivar"
+                      >
+                        {r.active ? (
+                          <>
+                            <Lock size={14} className="inline mr-1 text-rose-600" /> Desactivar
+                          </>
+                        ) : (
+                          <>
+                            <Unlock size={14} className="inline mr-1 text-emerald-600" /> Activar
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {!rules?.length ? <p className="text-sm font-semibold text-slate-500">Sin cupones aún.</p> : null}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-function UsersView() {
+/* ---------------------------
+   USERS (equipo real: invita, roles, activar/desactivar)
+--------------------------- */
+function UsersView({ orgId, token, role, canInvite, toast }) {
+  const [busy, setBusy] = useState(false);
+  const [rows, setRows] = useState([]);
+  const [q, setQ] = useState("");
+
+  const [invite, setInvite] = useState({ email: "", role: "viewer" });
+  const canEdit = ["owner", "admin"].includes(String(role || "").toLowerCase());
+
+  const load = useCallback(async () => {
+    if (!orgId) return;
+    setBusy(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("admin_users")
+        .select("id, email, role, is_active, created_at, last_login, user_id")
+        .eq("organization_id", orgId)
+        .order("created_at", { ascending: false })
+        .limit(250);
+
+      if (error) throw error;
+      setRows(data || []);
+    } catch (e) {
+      toast?.({ type: "bad", text: String(e?.message || e) });
+      setRows([]);
+    } finally {
+      setBusy(false);
+    }
+  }, [orgId, toast]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return rows;
+    return rows.filter((r) => (r.email || "").toLowerCase().includes(s));
+  }, [rows, q]);
+
+  const doInvite = async () => {
+    if (!canInvite) return toast?.({ type: "warn", text: "Sin permisos para invitar." });
+
+    const email = normEmail(invite.email);
+    if (!email) return toast?.({ type: "warn", text: "Email inválido." });
+
+    setBusy(true);
+    try {
+      const res = await fetch("/api/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ org_id: orgId, email, role: invite.role }),
+      });
+
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j?.ok) throw new Error(j?.error || "No se pudo invitar.");
+
+      toast?.({ type: "ok", text: "Invitación creada. Ese correo ya puede entrar." });
+      setInvite({ email: "", role: "viewer" });
+      await load();
+    } catch (e) {
+      toast?.({ type: "bad", text: String(e?.message || e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const updateRow = async (id, patch) => {
+    if (!canEdit) return toast?.({ type: "warn", text: "Solo Owner/Admin puede editar." });
+
+    setBusy(true);
+    try {
+      const { error } = await supabase
+        .from("admin_users")
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq("id", id);
+
+      if (error) throw error;
+      await load();
+      toast?.({ type: "ok", text: "Actualizado." });
+    } catch (e) {
+      toast?.({ type: "bad", text: String(e?.message || e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
-      <h4 className="text-lg font-black text-slate-900">Equipo</h4>
-      <p className="text-sm font-semibold text-slate-600 mt-1">
-        Invitaciones y roles se manejan por API.
-      </p>
+    <div className="space-y-6">
+      <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Equipo</p>
+            <h4 className="text-lg font-black text-slate-900">Usuarios y roles</h4>
+            <p className="text-sm font-semibold text-slate-600">Control de acceso por organización.</p>
+          </div>
+
+          <button
+            onClick={load}
+            className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm flex items-center gap-2"
+          >
+            <RefreshCcw size={16} className={busy ? "animate-spin" : ""} /> Actualizar
+          </button>
+        </div>
+
+        <div className="mt-5 grid md:grid-cols-3 gap-4">
+          <div className="md:col-span-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-2 mb-2 block">
+              Buscar
+            </label>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 font-black outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+              placeholder="email…"
+            />
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-black text-slate-700">Tu rol</p>
+            <p className="text-sm font-black text-slate-900 mt-1">{String(role || "viewer").toUpperCase()}</p>
+            <div className="mt-2">
+              {canInvite ? <Badge tone="emerald">Puede invitar</Badge> : <Badge tone="amber">Solo lectura</Badge>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Invitar</p>
+        <h4 className="text-lg font-black text-slate-900">Nuevo usuario</h4>
+
+        <div className="mt-4 grid md:grid-cols-3 gap-3">
+          <input
+            value={invite.email}
+            onChange={(e) => setInvite((s) => ({ ...s, email: e.target.value }))}
+            placeholder="correo@dominio.com"
+            className="md:col-span-2 rounded-xl border border-slate-200 px-4 py-3 font-black outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600"
+            disabled={!canInvite}
+          />
+
+          <select
+            value={invite.role}
+            onChange={(e) => setInvite((s) => ({ ...s, role: e.target.value }))}
+            className="rounded-xl border border-slate-200 px-4 py-3 font-black outline-none focus:ring-4 focus:ring-sky-500/10 focus:border-sky-600 bg-white"
+            disabled={!canInvite}
+          >
+            <option value="viewer">Viewer</option>
+            <option value="marketing">Marketing</option>
+            <option value="sales">Sales</option>
+            <option value="ops">Ops</option>
+            <option value="admin">Admin</option>
+            <option value="owner">Owner</option>
+          </select>
+        </div>
+
+        <button
+          onClick={doInvite}
+          disabled={!canInvite || busy}
+          className="mt-4 w-full px-5 py-3 rounded-2xl text-white font-black shadow-sm disabled:opacity-60 flex items-center justify-center gap-2"
+          style={{ background: BRAND.grad }}
+        >
+          <UserPlus size={18} /> Crear acceso
+        </button>
+
+        {!canInvite ? (
+          <p className="text-xs font-semibold text-slate-500 mt-3">
+            Solo Owner/Admin puede invitar o modificar roles.
+          </p>
+        ) : null}
+      </div>
+
+      <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Usuarios</p>
+        <h4 className="text-lg font-black text-slate-900">Lista</h4>
+
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[860px]">
+            <thead>
+              <tr className="text-left text-[10px] font-black uppercase tracking-widest text-slate-500">
+                <th className="py-2 pr-3">Email</th>
+                <th className="py-2 pr-3">Rol</th>
+                <th className="py-2 pr-3">Estado</th>
+                <th className="py-2 pr-3">Creado</th>
+                <th className="py-2 pr-3">Último login</th>
+                <th className="py-2 pr-3 text-right">Acción</th>
+              </tr>
+            </thead>
+
+            <tbody className="text-sm">
+              {filtered.map((u) => (
+                <tr key={u.id} className="border-t border-slate-200">
+                  <td className="py-3 pr-3 font-black text-slate-900">{u.email}</td>
+
+                  <td className="py-3 pr-3">
+                    <select
+                      value={String(u.role || "viewer").toLowerCase()}
+                      onChange={(e) => updateRow(u.id, { role: e.target.value })}
+                      disabled={!canEdit || busy}
+                      className="rounded-xl border border-slate-200 px-3 py-2 font-black bg-white"
+                    >
+                      <option value="viewer">viewer</option>
+                      <option value="marketing">marketing</option>
+                      <option value="sales">sales</option>
+                      <option value="ops">ops</option>
+                      <option value="admin">admin</option>
+                      <option value="owner">owner</option>
+                    </select>
+                  </td>
+
+                  <td className="py-3 pr-3">{u.is_active ? <Badge tone="emerald">Activo</Badge> : <Badge tone="slate">Off</Badge>}</td>
+
+                  <td className="py-3 pr-3 text-xs font-semibold text-slate-500">
+                    {u.created_at ? new Date(u.created_at).toLocaleString("es-MX") : "—"}
+                  </td>
+
+                  <td className="py-3 pr-3 text-xs font-semibold text-slate-500">
+                    {u.last_login ? new Date(u.last_login).toLocaleString("es-MX") : "—"}
+                  </td>
+
+                  <td className="py-3 pr-3 text-right">
+                    <button
+                      onClick={() => updateRow(u.id, { is_active: !u.is_active })}
+                      disabled={!canEdit || busy}
+                      className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-xs disabled:opacity-60"
+                    >
+                      {u.is_active ? (
+                        <>
+                          <Lock size={14} className="inline mr-1 text-rose-600" /> Desactivar
+                        </>
+                      ) : (
+                        <>
+                          <Unlock size={14} className="inline mr-1 text-emerald-600" /> Activar
+                        </>
+                      )}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+
+              {!filtered.length ? (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-sm font-semibold text-slate-500">
+                    Sin usuarios.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
 
-function IntegrationsView() {
+/* ---------------------------
+   INTEGRATIONS (estado real: envs + conteos + salud)
+--------------------------- */
+function IntegrationsView({ orgId, token, toast }) {
+  const [busy, setBusy] = useState(false);
+  const [health, setHealth] = useState(null);
+
+  const [stats, setStats] = useState({
+    orders24: 0,
+    paid24: 0,
+    revenue24: 0,
+    labels24: 0,
+    webhooks24: 0,
+  });
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/health", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        cache: "no-store",
+      }).catch(() => null);
+
+      const j = res ? await res.json().catch(() => null) : null;
+      setHealth(j);
+
+      if (orgId) {
+        const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+
+        const [oAll, oPaid, labels, wh] = await Promise.all([
+          supabase
+            .from("orders")
+            .select("id", { count: "exact", head: true })
+            .eq("organization_id", orgId)
+            .gte("created_at", since),
+
+          supabase
+            .from("orders")
+            .select("amount_total_mxn, status", { count: "exact", head: false })
+            .eq("organization_id", orgId)
+            .gte("created_at", since)
+            .in("status", ["paid", "fulfilled"])
+            .limit(500),
+
+          supabase
+            .from("shipping_labels")
+            .select("id", { count: "exact", head: true })
+            .eq("org_id", orgId)
+            .gte("created_at", since),
+
+          supabase
+            .from("shipping_webhooks")
+            .select("id", { count: "exact", head: true })
+            .gte("created_at", since),
+        ]);
+
+        const revenue24 = (oPaid?.data || []).reduce((a, r) => a + num(r.amount_total_mxn), 0);
+
+        setStats({
+          orders24: Number(oAll?.count || 0),
+          paid24: Number(oPaid?.count || (oPaid?.data || []).length || 0),
+          revenue24,
+          labels24: Number(labels?.count || 0),
+          webhooks24: Number(wh?.count || 0),
+        });
+      }
+    } catch (e) {
+      toast?.({ type: "bad", text: String(e?.message || e) });
+    } finally {
+      setBusy(false);
+    }
+  }, [orgId, token, toast]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const ok = (v) => !!v;
+
   return (
-    <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
-      <h4 className="text-lg font-black text-slate-900">Integraciones</h4>
-      <p className="text-sm font-semibold text-slate-600 mt-1">Stripe / Supabase / Envía.</p>
+    <div className="space-y-6">
+      <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Integraciones</p>
+            <h4 className="text-lg font-black text-slate-900">Estado del sistema</h4>
+            <p className="text-sm font-semibold text-slate-600">
+              Verifica Supabase, Stripe y Envía con señales reales.
+            </p>
+          </div>
+
+          <button
+            onClick={load}
+            className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm flex items-center gap-2"
+          >
+            <RefreshCcw size={16} className={busy ? "animate-spin" : ""} /> Actualizar
+          </button>
+        </div>
+
+        <div className="mt-6 grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <MiniKPI label="Pedidos (24h)" value={stats.orders24} icon={<ShoppingCart size={14} />} />
+          <MiniKPI label="Pagados (24h)" value={stats.paid24} icon={<CheckCircle2 size={14} />} />
+          <MiniKPI label="Ingresos (24h)" value={moneyMXN(stats.revenue24)} icon={<Wallet size={14} />} />
+          <MiniKPI label="Guías Envía (24h)" value={stats.labels24} icon={<Truck size={14} />} />
+        </div>
+      </div>
+
+      <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Health</p>
+        <h4 className="text-lg font-black text-slate-900">Variables / Conexiones</h4>
+
+        <div className="mt-4 grid md:grid-cols-2 gap-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-black text-slate-700 mb-2">Supabase</p>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-700">URL</span>
+              {ok(health?.env?.SUPABASE_URL) ? <Badge tone="emerald">OK</Badge> : <Badge tone="rose">FALTA</Badge>}
+            </div>
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-sm font-semibold text-slate-700">Service Role</span>
+              {ok(health?.env?.SUPABASE_SECRET_KEY) ? <Badge tone="emerald">OK</Badge> : <Badge tone="rose">FALTA</Badge>}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-black text-slate-700 mb-2">Pagos / Envíos</p>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-700">Stripe</span>
+              {ok(health?.env?.STRIPE_SECRET_KEY) ? <Badge tone="emerald">OK</Badge> : <Badge tone="rose">FALTA</Badge>}
+            </div>
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-sm font-semibold text-slate-700">Envía</span>
+              {ok(health?.env?.ENVIA_API_KEY) ? <Badge tone="emerald">OK</Badge> : <Badge tone="amber">Opcional</Badge>}
+            </div>
+          </div>
+        </div>
+
+        {health?.ok === false ? (
+          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+            <p className="text-sm font-black text-rose-900">Health error</p>
+            <p className="text-sm font-semibold text-rose-800 mt-1">
+              {health?.error || health?.detail || "Error"}
+            </p>
+          </div>
+        ) : null}
+
+        <p className="text-xs font-semibold text-slate-500 mt-4">
+          Si ves “FALTA”, corrige envs en Netlify y redeploy. Eso elimina el error “No se encontró la organización”.
+        </p>
+      </div>
     </div>
   );
 }
