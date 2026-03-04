@@ -22,36 +22,69 @@ const clamp = (v, n = 2500) => String(v ?? "").trim().slice(0, n);
 const normEmail = (s) => String(s || "").trim().toLowerCase();
 
 const isUuid = (s) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    String(s || "").trim()
-  );
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || "").trim());
 
 function normalizeGeminiError(e) {
   const msg = String(e?.message || e || "");
-  if (/model.*not found|404/i.test(msg)) {
-    return "Modelo de IA no disponible. Cambia GEMINI_MODEL (recomendado: gemini-2.5-flash-lite).";
-  }
-  if (/api key|unauth|permission|denied|401|403/i.test(msg)) {
-    return "IA desconectada o sin permisos. Revisa GEMINI_API_KEY en Netlify.";
-  }
+  if (/model.*not found|404/i.test(msg)) return "Modelo de IA no disponible. Cambia GEMINI_MODEL (recomendado: gemini-2.5-flash-lite).";
+  if (/api key|unauth|permission|denied|401|403/i.test(msg)) return "IA desconectada o sin permisos. Revisa GEMINI_API_KEY en Netlify.";
   return "Error interno en Unico IA.";
 }
 
 async function getMyRole(sb, orgId, user) {
   const myEmail = normEmail(user?.email);
-  const { data: mem } = await sb
+  const uid = user?.id || "00000000-0000-0000-0000-000000000000";
+
+  const q1 = await sb
+    .from("admin_users")
+    .select("role,is_active")
+    .eq("org_id", orgId)
+    .eq("is_active", true)
+    .or(`user_id.eq.${uid},email.ilike.${myEmail}`)
+    .limit(1)
+    .maybeSingle();
+
+  if (!q1?.error && q1?.data?.is_active) return String(q1.data.role || "").toLowerCase();
+
+  const q2 = await sb
     .from("admin_users")
     .select("role,is_active")
     .eq("organization_id", orgId)
     .eq("is_active", true)
-    .or(
-      `user_id.eq.${user?.id || "00000000-0000-0000-0000-000000000000"},email.ilike.${myEmail}`
-    )
+    .or(`user_id.eq.${uid},email.ilike.${myEmail}`)
     .limit(1)
     .maybeSingle();
 
-  if (!mem?.is_active) return null;
-  return String(mem?.role || "").toLowerCase();
+  if (!q2?.data?.is_active) return null;
+  return String(q2.data.role || "").toLowerCase();
+}
+
+async function selectOrdersByOrg(sb, orgId) {
+  // try org_id then fallback organization_id
+  const q1 = await sb.from("orders").select("amount_total_mxn,status").eq("org_id", orgId);
+  if (!q1?.error) return q1.data || [];
+  const q2 = await sb.from("orders").select("amount_total_mxn,status").eq("organization_id", orgId);
+  return q2.data || [];
+}
+
+async function upsertSiteSettings(sb, orgId, payload) {
+  // escribe ambos para compat
+  const row = {
+    ...payload,
+    org_id: orgId,
+    organization_id: orgId,
+    updated_at: new Date().toISOString(),
+  };
+
+  // intenta conflict por org_id, luego organization_id
+  try {
+    const { error } = await sb.from("site_settings").upsert(row, { onConflict: "org_id" });
+    if (error) throw error;
+    return null;
+  } catch {
+    const { error } = await sb.from("site_settings").upsert(row, { onConflict: "organization_id" });
+    return error || null;
+  }
 }
 
 export async function POST(req) {
@@ -64,31 +97,16 @@ export async function POST(req) {
 
     const body = await req.json().catch(() => ({}));
     const prompt = clamp(body.prompt ?? body.message ?? body.text, 2000);
-    const orgId = clamp(
-      body.orgId ?? body.organization_id ?? body.organizationId ?? body.org_id,
-      128
-    );
+    const orgId = clamp(body.orgId ?? body.organization_id ?? body.organizationId ?? body.org_id, 128);
 
-    if (!prompt || !orgId) {
-      return json(400, {
-        error: "Faltan datos. Se requiere 'message' o 'prompt' y 'organization_id' u 'orgId'.",
-      });
-    }
-
-    if (!isUuid(orgId)) {
-      return json(400, { error: "organization_id inválido." });
-    }
+    if (!prompt || !orgId) return json(400, { error: "Faltan datos. Se requiere 'message' o 'prompt' y 'org_id'/'organization_id'." });
+    if (!isUuid(orgId)) return json(400, { error: "org_id inválido." });
 
     const role = await getMyRole(sb, orgId, user);
-    if (!role) return json(403, { error: "Permisos insuficientes." });
-    if (!hasPerm(role, "dashboard")) return json(403, { error: "Permisos insuficientes." });
+    if (!role || !hasPerm(role, "dashboard")) return json(403, { error: "Permisos insuficientes." });
 
     const geminiKey = process.env.GEMINI_API_KEY;
-    if (!geminiKey) {
-      return json(503, {
-        error: "Unico IA está desconectada: falta GEMINI_API_KEY en variables de entorno (Netlify).",
-      });
-    }
+    if (!geminiKey) return json(503, { error: "Unico IA está desconectada: falta GEMINI_API_KEY en Netlify." });
 
     const modelName = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
 
@@ -99,238 +117,89 @@ export async function POST(req) {
         "Eres 'Unico IA', el agente ejecutivo-operativo del panel UnicOs. Hablas claro y directo. Si ejecutas acciones (promo, pixel, envíos, clientes, ventas), confirma lo hecho o explica el bloqueo con una solución.",
     });
 
-    const p = prompt.toLowerCase();
-    let toolContext = "";
-
+    // ----- Tools (operativas reales) -----
     const tool_salesSummary = async () => {
-      const { data, error } = await sb
-        .from("orders")
-        .select("amount_total_mxn,status")
-        .eq("organization_id", orgId);
-
-      if (error) return `No pude leer ventas (orders). Motivo: ${error.message}`;
-
-      const rows = data || [];
-      const paid = rows.filter((o) => String(o.status) === "paid" || String(o.status) === "fulfilled");
-      const pending = rows.filter((o) => !["paid", "fulfilled"].includes(String(o.status)));
+      const rows = await selectOrdersByOrg(sb, orgId);
+      const paid = (rows || []).filter((o) => ["paid", "fulfilled"].includes(String(o.status || "").toLowerCase()));
+      const pending = (rows || []).filter((o) => !["paid", "fulfilled"].includes(String(o.status || "").toLowerCase()));
       const total = paid.reduce((acc, o) => acc + Number(o.amount_total_mxn || 0), 0);
-
-      return `Ventas: ${paid.length} pagadas, ${pending.length} no pagadas. Ingresos pagados: $${total.toLocaleString(
-        "es-MX"
-      )} MXN.`;
+      return `Ventas: ${paid.length} pagadas, ${pending.length} no pagadas. Ingresos pagados: $${total.toLocaleString("es-MX")} MXN.`;
     };
 
     const tool_setPromo = async (text) => {
       if (!hasPerm(role, "marketing")) return "No tienes permisos para activar promos (Marketing).";
       const promoText = clamp(text, 160);
-      const { error } = await sb
-        .from("site_settings")
-        .upsert(
-          {
-            organization_id: orgId,
-            promo_active: true,
-            promo_text: promoText,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "organization_id" }
-        );
-
-      if (error) return `No pude activar el megáfono. Motivo: ${error.message}`;
+      const err = await upsertSiteSettings(sb, orgId, { promo_active: true, promo_text: promoText });
+      if (err) return `No pude activar el megáfono. Motivo: ${err.message}`;
       return `Megáfono ACTIVADO. Mensaje: "${promoText}"`;
     };
 
     const tool_disablePromo = async () => {
       if (!hasPerm(role, "marketing")) return "No tienes permisos para desactivar promos (Marketing).";
-      const { error } = await sb
-        .from("site_settings")
-        .upsert(
-          {
-            organization_id: orgId,
-            promo_active: false,
-            promo_text: null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "organization_id" }
-        );
-
-      if (error) return `No pude apagar el megáfono. Motivo: ${error.message}`;
+      const err = await upsertSiteSettings(sb, orgId, { promo_active: false, promo_text: null });
+      if (err) return `No pude apagar el megáfono. Motivo: ${err.message}`;
       return "Megáfono APAGADO.";
     };
 
     const tool_setPixel = async (pixelIdRaw) => {
-      if (!hasPerm(role, "marketing") && !hasPerm(role, "integrations")) {
-        return "No tienes permisos para configurar Pixel (Marketing/Integraciones).";
-      }
+      if (!hasPerm(role, "marketing") && !hasPerm(role, "integrations")) return "No tienes permisos para configurar Pixel (Marketing/Integraciones).";
       const pixelId = clamp(pixelIdRaw, 80);
-      const { error } = await sb
-        .from("site_settings")
-        .upsert(
-          {
-            organization_id: orgId,
-            pixel_id: pixelId,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "organization_id" }
-        );
-
-      if (error) return `No pude guardar el Pixel. Motivo: ${error.message}`;
+      const err = await upsertSiteSettings(sb, orgId, { pixel_id: pixelId });
+      if (err) return `No pude guardar el Pixel. Motivo: ${err.message}`;
       return `Pixel guardado: ${pixelId}`;
     };
 
-    const tool_pendingShipments = async () => {
-      if (!hasPerm(role, "shipping") && !hasPerm(role, "orders")) {
-        return "No tienes permisos para ver envíos (Shipping/Pedidos).";
-      }
-      const { data, error } = await sb
-        .from("shipping_labels")
-        .select("stripe_session_id,tracking_number,status,updated_at")
-        .eq("org_id", orgId)
-        .order("updated_at", { ascending: false })
-        .limit(20);
+    // IA: decide tool context simple
+    const p = prompt.toLowerCase();
+    let toolContext = "";
 
-      if (error) return `No pude leer envíos (shipping_labels). Motivo: ${error.message}`;
+    if (p.includes("ventas") || p.includes("reporte") || p.includes("ingresos")) toolContext += "\n" + (await tool_salesSummary());
+    if (p.includes("activar promo")) toolContext += "\nTOOL_HINT: setPromo('<texto>')";
+    if (p.includes("apagar promo") || p.includes("desactivar promo")) toolContext += "\nTOOL_HINT: disablePromo()";
+    if (p.includes("pixel")) toolContext += "\nTOOL_HINT: setPixel('<id>')";
 
-      const rows = data || [];
-      if (!rows.length) return "Envíos: sin registros todavía.";
+    const input = `CONTEXTO:\nOrg=${orgId}\nRol=${role}\n${toolContext}\n\nUSUARIO:\n${prompt}\n\nRESPUESTA:`;
 
-      const pending = rows.filter((r) => !String(r.status || "").toUpperCase().includes("DELIVER"));
-      if (!pending.length) return "Envíos: todo está en estado final (entregado / finalizado).";
+    let reply = "";
+    try {
+      const out = await model.generateContent(input);
+      reply = out?.response?.text?.() || "Listo.";
+    } catch (e) {
+      return json(500, { error: normalizeGeminiError(e) });
+    }
 
-      return `Envíos pendientes (últimos ${pending.length}):\n- ${pending
-        .slice(0, 10)
-        .map(
-          (r) =>
-            `${r.status || ""} · tracking=${r.tracking_number || "-"} · session=${r.stripe_session_id || "-"}`
-        )
-        .join("\n- ")}`;
+    // Ejecutar acciones si el reply trae comandos (súper conservador)
+    const exec = async () => {
+      const r = reply || "";
+      const m1 = r.match(/setPromo\(['"`](.+?)['"`]\)/i);
+      const m2 = r.match(/disablePromo\(\)/i);
+      const m3 = r.match(/setPixel\(['"`](.+?)['"`]\)/i);
+
+      const logs = [];
+      if (m1) logs.push(await tool_setPromo(m1[1]));
+      if (m2) logs.push(await tool_disablePromo());
+      if (m3) logs.push(await tool_setPixel(m3[1]));
+
+      if (logs.length) reply += `\n\n—\nAcciones:\n- ${logs.join("\n- ")}`;
     };
 
-    const tool_topCustomers = async () => {
-      if (!hasPerm(role, "crm") && !hasPerm(role, "orders")) {
-        return "No tienes permisos para ver clientes (CRM/Pedidos).";
-      }
-      const { data, error } = await sb
-        .from("orders")
-        .select("email,customer_name,amount_total_mxn,status")
-        .eq("organization_id", orgId)
-        .in("status", ["paid", "fulfilled"])
-        .limit(500);
-
-      if (error) return `No pude leer clientes (orders). Motivo: ${error.message}`;
-
-      const map = new Map();
-      for (const o of data || []) {
-        const email = String(o.email || "").trim().toLowerCase();
-        if (!email) continue;
-        const rec = map.get(email) || {
-          email,
-          name: String(o.customer_name || "").trim() || email,
-          orders: 0,
-          total: 0,
-        };
-        rec.orders += 1;
-        rec.total += Number(o.amount_total_mxn || 0);
-        map.set(email, rec);
-      }
-
-      const top = Array.from(map.values()).sort((a, b) => b.total - a.total).slice(0, 5);
-      if (!top.length) return "Clientes: todavía no hay ventas pagadas.";
-
-      return `Top clientes (pagado):\n- ${top
-        .map((c) => `${c.name} · ${c.orders} compras · $${c.total.toLocaleString("es-MX")} MXN`)
-        .join("\n- ")}`;
-    };
-
-    if (p.includes("promo") || p.includes("megáfono") || p.includes("cintillo")) {
-      if (p.includes("apaga") || p.includes("desactiva") || p.includes("quita")) {
-        toolContext = await tool_disablePromo();
-      } else {
-        const m = prompt.match(/"([^"]{3,160})"/);
-        if (m && m[1]) toolContext = await tool_setPromo(m[1]);
-        else toolContext = "El usuario quiere activar una promo.";
-      }
-    }
-
-    if (!toolContext && (p.includes("pixel") || p.includes("meta pixel") || p.includes("facebook pixel"))) {
-      const m = prompt.match(/(\d{8,20})/);
-      if (m && m[1]) toolContext = await tool_setPixel(m[1]);
-      else toolContext = "El usuario pidió configurar Pixel, pero no dio el ID.";
-    }
-
-    if (!toolContext && (p.includes("venta") || p.includes("ingreso") || p.includes("resumen") || p.includes("dashboard"))) {
-      toolContext = await tool_salesSummary();
-    }
-
-    if (!toolContext && (p.includes("envío") || p.includes("envios") || p.includes("guía") || p.includes("tracking"))) {
-      toolContext = await tool_pendingShipments();
-    }
-
-    if (!toolContext && (p.includes("cliente") || p.includes("clientes") || p.includes("top clientes"))) {
-      toolContext = await tool_topCustomers();
-    }
-
-    if (toolContext === "El usuario quiere activar una promo.") {
-      const copyResult = await model.generateContent(
-        `Genera SOLO una frase corta (máximo 120 caracteres), persuasiva, en MAYÚSCULAS con 1-2 emojis para un cintillo de tienda. Contexto: "${prompt}"`
-      );
-      const copy = clamp(copyResult.response.text(), 160);
-      toolContext = await tool_setPromo(copy);
-      await writeAudit(sb, {
-        organization_id: orgId,
-        actor_email: normEmail(user?.email),
-        actor_user_id: user?.id || null,
-        action: "ai.promo.auto_copy",
-        entity: "site_settings",
-        entity_id: orgId,
-        summary: "AI generated promo copy",
-        meta: { length: prompt.length },
-        ip: req.headers.get("x-forwarded-for") || null,
-        user_agent: req.headers.get("user-agent") || null,
-      });
-      return json(200, { reply: `Listo.\n${toolContext}` });
-    }
-
-    if (toolContext === "El usuario pidió configurar Pixel, pero no dio el ID.") {
-      await writeAudit(sb, {
-        organization_id: orgId,
-        actor_email: normEmail(user?.email),
-        actor_user_id: user?.id || null,
-        action: "ai.pixel.missing",
-        entity: "ai",
-        entity_id: orgId,
-        summary: "AI asked for pixel id",
-        meta: { length: prompt.length },
-        ip: req.headers.get("x-forwarded-for") || null,
-        user_agent: req.headers.get("user-agent") || null,
-      });
-      return json(200, {
-        reply: "Pásame el número del Pixel (solo dígitos) y lo guardo. Ejemplo: 123456789012345.",
-      });
-    }
-
-    const finalPrompt = toolContext
-      ? `Usuario: "${prompt}"\n\nDatos/Acciones reales del sistema:\n${toolContext}\n\nResponde con: (1) resumen ejecutivo corto, (2) siguiente acción recomendada, (3) una acción concreta en UnicOs.`
-      : prompt;
-
-    const result = await model.generateContent(finalPrompt);
-    const reply = clamp(result?.response?.text?.() || "", 2500);
+    await exec();
 
     await writeAudit(sb, {
       organization_id: orgId,
       actor_email: normEmail(user?.email),
       actor_user_id: user?.id || null,
-      action: "ai.prompt",
+      action: "ai.chat",
       entity: "ai",
-      entity_id: orgId,
-      summary: "AI prompt executed",
-      meta: { length: prompt.length, tool: toolContext ? true : false, model: modelName, role },
+      entity_id: "gemini",
+      summary: "AI request processed",
+      meta: { len: prompt.length },
       ip: req.headers.get("x-forwarded-for") || null,
       user_agent: req.headers.get("user-agent") || null,
     });
 
-    return json(200, { reply: reply || "Sin respuesta." });
+    return json(200, { ok: true, reply });
   } catch (e) {
-    const friendly = normalizeGeminiError(e);
-    return json(500, { error: friendly, detail: String(e?.message || e) });
+    return json(500, { error: String(e?.message || e) });
   }
 }
