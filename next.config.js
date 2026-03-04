@@ -3,6 +3,7 @@
 // UnicOs — Next config (seguro + Lighthouse-friendly)
 
 const FALLBACK_SUPABASE_HOST = "lpbzndnavkbpxwnlbqgb.supabase.co";
+const FALLBACK_SCORESTORE_HOST = "scorestore.netlify.app";
 
 function supabaseHost() {
   try {
@@ -16,12 +17,25 @@ function supabaseHost() {
 
 const SUPABASE_HOST = supabaseHost();
 
+function scorestoreHost() {
+  try {
+    const u = process.env.NEXT_PUBLIC_SCORESTORE_URL || process.env.SCORESTORE_URL;
+    if (!u) return FALLBACK_SCORESTORE_HOST;
+    return new URL(u).hostname || FALLBACK_SCORESTORE_HOST;
+  } catch {
+    return FALLBACK_SCORESTORE_HOST;
+  }
+}
+
+const SCORESTORE_HOST = scorestoreHost();
+
 const csp = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
-  `img-src 'self' data: blob: https://${SUPABASE_HOST}`,
+  // UnicOs muestra imágenes desde Supabase y (para Score Store) rutas tipo assets/... que viven en scorestore.netlify.app
+  `img-src 'self' data: blob: https://${SUPABASE_HOST} https://${SCORESTORE_HOST}`,
   "style-src 'self' 'unsafe-inline'",
   "script-src 'self' 'unsafe-inline'",
   `connect-src 'self' https://${SUPABASE_HOST} wss://${SUPABASE_HOST} https://generativelanguage.googleapis.com https://api.stripe.com`,
@@ -43,7 +57,10 @@ const nextConfig = {
   output: "standalone",
   reactStrictMode: true,
   images: {
-    remotePatterns: [{ protocol: "https", hostname: SUPABASE_HOST }],
+    remotePatterns: [
+      { protocol: "https", hostname: SUPABASE_HOST },
+      { protocol: "https", hostname: SCORESTORE_HOST },
+    ],
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
