@@ -16,9 +16,7 @@ function getBearerToken(req) {
 }
 
 const isUuid = (s) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    String(s || "").trim()
-  );
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || "").trim());
 
 const normEmail = (s) => String(s || "").trim().toLowerCase();
 
@@ -40,20 +38,32 @@ function money(n) {
 
 async function getMyRole(sb, orgId, user) {
   const myEmail = normEmail(user?.email);
+  const uid = user?.id || "00000000-0000-0000-0000-000000000000";
 
-  const { data: mem } = await sb
+  // try org_id first
+  const q1 = await sb
+    .from("admin_users")
+    .select("role,is_active")
+    .eq("org_id", orgId)
+    .eq("is_active", true)
+    .or(`user_id.eq.${uid},email.ilike.${myEmail}`)
+    .limit(1)
+    .maybeSingle();
+
+  if (!q1?.error && q1?.data?.is_active) return String(q1.data.role || "").toLowerCase();
+
+  // fallback organization_id
+  const q2 = await sb
     .from("admin_users")
     .select("role,is_active")
     .eq("organization_id", orgId)
     .eq("is_active", true)
-    .or(
-      `user_id.eq.${user?.id || "00000000-0000-0000-0000-000000000000"},email.ilike.${myEmail}`
-    )
+    .or(`user_id.eq.${uid},email.ilike.${myEmail}`)
     .limit(1)
     .maybeSingle();
 
-  if (!mem?.is_active) return null;
-  return String(mem?.role || "").toLowerCase();
+  if (!q2?.data?.is_active) return null;
+  return String(q2.data.role || "").toLowerCase();
 }
 
 // FX simple (si tu Stripe opera en USD)
@@ -76,7 +86,6 @@ function stripeKey() {
 
 async function stripeGET(path, query = {}) {
   const url = new URL(`${STRIPE_API}${path}`);
-
   for (const [k, v] of Object.entries(query || {})) {
     if (v === undefined || v === null) continue;
     if (Array.isArray(v)) for (const it of v) url.searchParams.append(k, String(it));
@@ -124,8 +133,7 @@ async function feeFromSession(sessionId) {
   const btId = typeof bt === "string" ? bt : bt?.id;
   if (!btId) return { session_id: sessionId, fee_mxn: 0, fee_currency: null, fee_cents: 0 };
 
-  const balanceTx =
-    typeof bt === "object" && bt ? bt : await stripeGET(`/balance_transactions/${encodeURIComponent(btId)}`);
+  const balanceTx = typeof bt === "object" && bt ? bt : await stripeGET(`/balance_transactions/${encodeURIComponent(btId)}`);
 
   const feeCents = Number(balanceTx?.fee || 0) || 0;
   const feeCurrency = String(balanceTx?.currency || "").toLowerCase() || null;
@@ -143,7 +151,7 @@ export async function POST(req) {
     if (authErr) return json(401, { ok: false, error: "No autorizado" });
 
     const body = await req.json().catch(() => ({}));
-    const orgId = String(body?.org_id || "").trim();
+    const orgId = String(body?.org_id || body?.organization_id || "").trim();
     const sessions = clampList(body?.stripe_session_ids, 120);
 
     if (!isUuid(orgId)) return json(400, { ok: false, error: "org_id inválido" });
@@ -159,9 +167,7 @@ export async function POST(req) {
     for (let i = 0; i < sessions.length; i += concurrency) {
       const slice = sessions.slice(i, i + concurrency);
       const chunk = await Promise.all(
-        slice.map((id) =>
-          feeFromSession(id).catch(() => ({ session_id: id, fee_mxn: 0, fee_currency: null, fee_cents: 0 }))
-        )
+        slice.map((id) => feeFromSession(id).catch(() => ({ session_id: id, fee_mxn: 0, fee_currency: null, fee_cents: 0 })))
       );
       for (const d of chunk) {
         details.push(d);
