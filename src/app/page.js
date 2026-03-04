@@ -14,12 +14,8 @@ import {
   Shield,
   RefreshCcw,
   Search,
-  Plus,
   X,
-  Pencil,
-  Trash2,
   HelpCircle,
-  Copy,
   ExternalLink,
   Truck,
   CreditCard,
@@ -28,11 +24,9 @@ import {
   Receipt,
   Clock,
   Activity,
-  CheckCircle2,
   AlertTriangle,
   LogOut,
   Menu,
-  ChevronDown,
 } from "lucide-react";
 
 import AiDock from "./ai-dock";
@@ -219,152 +213,116 @@ function ImgBadge({ src, alt }) {
   const finalSrc = resolveSrc(src);
 
   return (
-    <div className="w-12 h-12 rounded-2xl border border-slate-200 bg-white shadow-sm flex items-center justify-center overflow-hidden relative">
-      <div className="absolute inset-0 bg-gradient-to-br from-slate-50 to-white" />
+    <div className="w-10 h-10 rounded-2xl border border-slate-200 bg-white overflow-hidden flex items-center justify-center shadow-sm">
       {finalSrc ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={finalSrc}
-          alt={alt || "img"}
-          loading="lazy"
-          decoding="async"
-          referrerPolicy="no-referrer"
-          className="w-full h-full object-contain p-2 relative"
-        />
+        <img src={finalSrc} alt={alt || "IMG"} className="w-full h-full object-contain" />
       ) : (
-        <span className="text-xs font-black text-slate-400 relative">IMG</span>
+        <span className="text-xs font-black text-slate-300">IMG</span>
       )}
     </div>
   );
 }
 
-function MiniKPI({ label, value, icon, note }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{label}</p>
-          <p className="text-lg font-black text-slate-900 mt-1">{String(value ?? "—")}</p>
-          {note ? <p className="text-[11px] font-bold text-slate-500 mt-1">{note}</p> : null}
-        </div>
-        <div className="w-9 h-9 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-700">
-          {icon}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SectionTitle({ icon, title, subtitle, helpTitle, helpText, right }) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 rounded-2xl border border-slate-200 bg-white shadow-sm flex items-center justify-center text-slate-900">
-            {icon}
-          </div>
-          <h2 className="text-xl font-black text-slate-900 tracking-tight">{title}</h2>
-          {helpText ? <HelpTip title={helpTitle || "¿Qué es esto?"} text={helpText} /> : null}
-        </div>
-        {subtitle ? <p className="text-sm font-semibold text-slate-600 mt-2">{subtitle}</p> : null}
-      </div>
-      {right ? <div className="shrink-0">{right}</div> : null}
-    </div>
-  );
-}
-
-function Pill({ tone = "neutral", children }) {
-  const cls =
-    tone === "ok"
-      ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-      : tone === "warn"
-      ? "bg-amber-50 text-amber-800 border-amber-200"
-      : tone === "bad"
-      ? "bg-rose-50 text-rose-800 border-rose-200"
-      : "bg-slate-50 text-slate-800 border-slate-200";
-
-  return <span className={clsx("inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-black", cls)}>{children}</span>;
-}
-
-function Divider() {
-  return <div className="h-px bg-slate-200 my-6" />;
-}
-
 function SkeletonLine() {
-  return <div className="h-4 rounded-xl bg-slate-100 animate-pulse" />;
+  return <div className="h-5 rounded-xl bg-slate-200/70 animate-pulse" />;
 }
 
 function EmptyState({ title, text }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <p className="text-sm font-black text-slate-900">{title}</p>
-      <p className="text-sm font-semibold text-slate-600 mt-1">{text}</p>
+    <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-8">
+      <p className="text-lg font-black text-slate-900">{title}</p>
+      <p className="text-sm font-semibold text-slate-600 mt-2 leading-relaxed">{text}</p>
     </div>
   );
 }
 
-/* =========================================================
-   Main Page
-========================================================= */
+function MiniKPI({ label, value, note, icon }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-2">
+          <span className="text-slate-500">{icon}</span>
+          {label}
+        </span>
+        {note ? <span className="text-[10px] font-black text-slate-400">{note}</span> : null}
+      </p>
+      <p className="text-lg font-black text-slate-900 mt-2">{String(value ?? "—")}</p>
+    </div>
+  );
+}
 
-export default function Page() {
+export default function HomePage() {
   const { toast, show } = useToast();
 
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState(null);
+
+  const [orgId] = useState(SCORE_ORG_ID);
+
   const [role, setRole] = useState(null);
-  const [orgId, setOrgId] = useState(SCORE_ORG_ID);
+  const canWrite = !!role && hasPerm(role, "write");
+  const canUsers = !!role && canManageUsers(role);
 
-  const [navOpen, setNavOpen] = useState(false);
   const [active, setActive] = useState("dashboard");
+  const [navOpen, setNavOpen] = useState(false);
 
-  const canWrite = useMemo(() => (role ? hasPerm(role, "write") : false), [role]);
-  const canUsers = useMemo(() => (role ? canManageUsers(role) : false), [role]);
-
-  // Basic auth bootstrap (Supabase)
   useEffect(() => {
-    let unsub = null;
-
-    const boot = async () => {
+    const run = async () => {
       if (!SUPABASE_CONFIGURED) {
-        show({ type: "bad", text: "Falta configurar Supabase en .env (NEXT_PUBLIC_SUPABASE_URL / KEY)." });
         setReady(true);
         return;
       }
-
-      const { data } = await supabase.auth.getUser();
-      setUser(data?.user || null);
-
-      unsub = supabase.auth.onAuthStateChange((_e, session) => {
-        setUser(session?.user || null);
-      }).data?.subscription;
-
+      const { data } = await supabase.auth.getSession();
+      const u = data?.session?.user || null;
+      setUser(u);
       setReady(true);
     };
 
-    boot().catch(() => setReady(true));
-    return () => {
-      try {
-        unsub?.unsubscribe?.();
-      } catch {}
-    };
-  }, [show]);
+    run().catch(() => setReady(true));
+  }, []);
 
-  // Resolve role for org
   useEffect(() => {
     const run = async () => {
-      if (!user || !isUuid(orgId)) return;
+      if (!user || !orgId) return;
       const r = await selectAdminRole(orgId, user);
       setRole(r);
     };
     run().catch(() => {});
   }, [user, orgId]);
 
-  const token = useMemo(() => {
-    // token live from supabase session
-    return supabase?.auth?.getSession
-      ? null
-      : null;
+  // ✅ TOKEN REAL para APIs server-side (Stripe/Envía)
+  const [authToken, setAuthToken] = useState("");
+
+  useEffect(() => {
+    let unsub = null;
+
+    const bootToken = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const t = data?.session?.access_token || "";
+        setAuthToken(t);
+      } catch {
+        setAuthToken("");
+      }
+
+      try {
+        const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+          setAuthToken(session?.access_token || "");
+        });
+        unsub = data?.subscription || null;
+      } catch {
+        // ignore
+      }
+    };
+
+    bootToken();
+
+    return () => {
+      try {
+        unsub?.unsubscribe?.();
+      } catch {}
+    };
   }, []);
 
   const logout = async () => {
@@ -380,7 +338,7 @@ export default function Page() {
      Views
   ========================================================= */
 
-  function DashboardView({ orgId, toast }) {
+  function DashboardView({ orgId, token, toast }) {
     const [busy, setBusy] = useState(false);
 
     const [kpi, setKpi] = useState({
@@ -393,6 +351,8 @@ export default function Page() {
       enviaCost: 0,
       sessions: [],
       updatedAt: null,
+      stripeDash: null,
+      enviaDash: null,
     });
 
     const load = useCallback(async () => {
@@ -440,7 +400,10 @@ export default function Page() {
         try {
           const res = await fetch(`/api/stripe/fees`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
             // Nota: el backend valida por admin_users. Aquí mandamos sesiones.
             body: JSON.stringify({
               org_id: orgId,
@@ -461,6 +424,36 @@ export default function Page() {
           stripeMode = "estimate";
         }
 
+        // Stripe/Envía dashboards (misma info que ves en sus plataformas)
+        // Nota: requiere token (Supabase Auth) + env vars en server.
+        let stripeDash = null;
+        let enviaDash = null;
+
+        if (token) {
+          try {
+            const [sres, eres] = await Promise.all([
+              fetch(`/api/stripe/summary`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ org_id: orgId }),
+              }),
+              fetch(`/api/envia/summary`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ org_id: orgId, include_track: false }),
+              }),
+            ]);
+
+            const sj = await sres.json().catch(() => null);
+            const ej = await eres.json().catch(() => null);
+
+            if (sres.ok && sj?.ok) stripeDash = sj;
+            if (eres.ok && ej?.ok) enviaDash = ej;
+          } catch {
+            // ignore, UI mantiene costos desde Supabase
+          }
+        }
+
         const netRaw = Math.max(0, gross - stripeFee - enviaCost);
         const net = Math.max(0, netRaw * 0.7); // no se menciona en UI
 
@@ -474,13 +467,15 @@ export default function Page() {
           enviaCost,
           sessions: list.slice(0, 12),
           updatedAt: new Date().toISOString(),
+          stripeDash,
+          enviaDash,
         });
       } catch (e) {
         toast?.({ type: "bad", text: String(e?.message || e) });
       } finally {
         setBusy(false);
       }
-    }, [orgId, toast]);
+    }, [orgId, toast, token]);
 
     useEffect(() => {
       load();
@@ -533,9 +528,134 @@ export default function Page() {
           </div>
         </div>
 
+        {/* Stripe + Envía (igual que dashboards) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                  <CreditCard size={14} className="text-sky-600" /> Stripe (dashboard)
+                  <HelpTip
+                    title="Stripe (dashboard)"
+                    text="Esto trae datos reales desde Stripe (balance, payouts, disputas y reembolsos). Si no aparece, falta STRIPE_SECRET_KEY en el servidor o no tienes permisos."
+                  />
+                </p>
+                <h4 className="text-lg font-black text-slate-900 mt-1">Balance</h4>
+              </div>
+              <a
+                href="https://dashboard.stripe.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-xs flex items-center gap-2"
+                title="Abrir Stripe"
+              >
+                <ExternalLink size={14} /> Abrir
+              </a>
+            </div>
+
+            {kpi.stripeDash ? (
+              <div className="mt-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <MiniKPI label="Disponible" value={moneyMXN(kpi.stripeDash?.balance?.available_mxn || 0)} icon={<Wallet size={14} />} />
+                  <MiniKPI label="Pendiente" value={moneyMXN(kpi.stripeDash?.balance?.pending_mxn || 0)} icon={<Clock size={14} />} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <MiniKPI label="Disputas (30 días)" value={String(kpi.stripeDash?.last_30_days?.disputes_count || 0)} icon={<AlertTriangle size={14} />} />
+                  <MiniKPI label="Reembolsos (30 días)" value={String(kpi.stripeDash?.last_30_days?.refunds_count || 0)} icon={<Receipt size={14} />} />
+                </div>
+
+                <p className="text-xs font-semibold text-slate-500">
+                  Última sync: {kpi.stripeDash?.updated_at ? new Date(kpi.stripeDash.updated_at).toLocaleString("es-MX") : "—"}
+                </p>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-black text-slate-900">Aún no disponible</p>
+                <p className="text-sm font-semibold text-slate-600 mt-1">
+                  Para ver esto necesitas:
+                  <br />• Iniciar sesión (token)
+                  <br />• Permiso owner/admin/finance en admin_users
+                  <br />• STRIPE_SECRET_KEY en el servidor de UnicOs
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                  <Truck size={14} className="text-sky-600" /> Envía.com (dashboard)
+                  <HelpTip
+                    title="Envía.com (dashboard)"
+                    text="Esto trae datos reales desde Envía.com usando tu ENVIA_API_KEY. Muestra costos y últimos envíos registrados."
+                  />
+                </p>
+                <h4 className="text-lg font-black text-slate-900 mt-1">Envíos</h4>
+              </div>
+              <a
+                href="https://envia.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-xs flex items-center gap-2"
+                title="Abrir Envía"
+              >
+                <ExternalLink size={14} /> Abrir
+              </a>
+            </div>
+
+            {kpi.enviaDash ? (
+              <div className="mt-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <MiniKPI label="Guías (últimas 200)" value={String(kpi.enviaDash?.totals?.labels || 0)} icon={<Package size={14} />} />
+                  <MiniKPI label="Costo total" value={moneyMXN(kpi.enviaDash?.totals?.cost_mxn || 0)} icon={<Wallet size={14} />} />
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                  <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+                    <p className="text-xs font-black text-slate-700">Últimos envíos</p>
+                  </div>
+                  <div className="max-h-[200px] overflow-auto">
+                    {(kpi.enviaDash?.rows || []).slice(0, 8).map((r) => (
+                      <div key={r.id} className="px-4 py-3 border-b border-slate-200 last:border-b-0">
+                        <p className="text-sm font-black text-slate-900 truncate">
+                          {r.carrier || "Carrier"} · {r.tracking ? r.tracking : "Sin tracking"}
+                        </p>
+                        <p className="text-xs font-semibold text-slate-500">
+                          {r.created_at ? new Date(r.created_at).toLocaleString("es-MX") : "—"} · {moneyMXN(r.cost_mxn || 0)}
+                        </p>
+                      </div>
+                    ))}
+                    {!((kpi.enviaDash?.rows || []).length) ? (
+                      <div className="px-4 py-6">
+                        <p className="text-sm font-semibold text-slate-600">Aún no hay guías registradas.</p>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <p className="text-xs font-semibold text-slate-500">
+                  Última sync: {kpi.enviaDash?.updated_at ? new Date(kpi.enviaDash.updated_at).toLocaleString("es-MX") : "—"}
+                </p>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-black text-slate-900">Aún no disponible</p>
+                <p className="text-sm font-semibold text-slate-600 mt-1">
+                  Para ver esto necesitas:
+                  <br />• Iniciar sesión (token)
+                  <br />• Permiso owner/admin/ops/finance en admin_users
+                  <br />• ENVIA_API_KEY en el servidor de UnicOs
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
         <EmptyState
-          title="Siguiente (operación real)"
-          text="Cuando ya tengas Score Store 100% final, aquí conectamos el espejo completo: promos/temas, copy, shipping, garantías, reportes y control total."
+          title="Siguiente (control total)"
+          text="Cuando Score Store quede final, aquí activamos el espejo completo: cambiar temporada/tema, copys, promo bar, pixel y automatización de operación."
         />
       </div>
     );
@@ -786,7 +906,7 @@ export default function Page() {
                 canWrite ? "bg-slate-900 text-white hover:bg-slate-800" : "bg-slate-200 text-slate-500 cursor-not-allowed"
               )}
             >
-              <Plus size={16} /> Nuevo
+              <Package size={16} /> Nuevo
             </button>
           </div>
         </div>
@@ -809,7 +929,7 @@ export default function Page() {
                 <tr key={r.id} className="border-t border-slate-200">
                   <td className="py-3 pr-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <ImgBadge src={r?.image_url || (Array.isArray(r?.images) ? r.images[0] : "")} alt={r?.name || "Producto"} />
+                      <ImgBadge src={r?.image_url} alt={r?.name || "Producto"} />
                       <div className="min-w-0">
                         <p className="text-sm font-black text-slate-900 truncate">{r?.name || "—"}</p>
                         <p className="text-xs font-semibold text-slate-500 truncate">Rank: {String(r?.rank ?? "—")}</p>
@@ -845,20 +965,24 @@ export default function Page() {
                         disabled={!canWrite}
                         className={clsx(
                           "px-3 py-2 rounded-2xl font-black text-sm border",
-                          canWrite ? "border-slate-200 bg-white hover:bg-slate-50 text-slate-900" : "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                          canWrite
+                            ? "border-slate-200 bg-white hover:bg-slate-50 text-slate-900"
+                            : "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                         )}
                       >
-                        <Pencil size={16} />
+                        Editar
                       </button>
                       <button
                         onClick={() => softDelete(r)}
                         disabled={!canWrite}
                         className={clsx(
                           "px-3 py-2 rounded-2xl font-black text-sm border",
-                          canWrite ? "border-red-200 bg-red-50 hover:bg-red-100 text-red-700" : "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                          canWrite
+                            ? "border-red-200 bg-red-50 hover:bg-red-100 text-red-700"
+                            : "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                         )}
                       >
-                        <Trash2 size={16} />
+                        Eliminar
                       </button>
                     </div>
                   </td>
@@ -879,15 +1003,27 @@ export default function Page() {
         {/* Modal */}
         {open ? (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/40" onClick={closeModal} role="button" aria-label="Cerrar modal" />
+            <div
+              className="absolute inset-0 bg-black/40"
+              onClick={closeModal}
+              role="button"
+              aria-label="Cerrar modal"
+            />
             <div className="relative w-full max-w-3xl rounded-[2rem] border border-slate-200 bg-white shadow-xl p-6">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">{editing?.id ? "Editar" : "Nuevo"} producto</p>
-                  <h4 className="text-lg font-black text-slate-900">{editing?.id ? (editing?.name || "Producto") : "Crear producto"}</h4>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">
+                    {editing?.id ? "Editar" : "Nuevo"} producto
+                  </p>
+                  <h4 className="text-lg font-black text-slate-900">
+                    {editing?.id ? editing?.name || "Producto" : "Crear producto"}
+                  </h4>
                 </div>
 
-                <button onClick={closeModal} className="w-10 h-10 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center">
+                <button
+                  onClick={closeModal}
+                  className="w-10 h-10 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center"
+                >
                   <X size={18} />
                 </button>
               </div>
@@ -919,7 +1055,7 @@ export default function Page() {
                     inputMode="decimal"
                     className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
                   />
-                  <p className="text-[11px] font-semibold text-slate-500 mt-1">Stripe usa centavos automáticamente (price_cents).</p>
+                  <p className="text-[11px] font-semibold text-slate-500 mt-1">Stripe usa centavos automáticamente.</p>
                 </div>
 
                 <div>
@@ -986,11 +1122,8 @@ export default function Page() {
                     onChange={(e) => setForm((p) => ({ ...p, images_lines: e.target.value }))}
                     rows={4}
                     className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                    placeholder="https://.../img1.webp&#10;assets/EDICION_2025/hoodie.webp&#10;https://.../img2.webp"
+                    placeholder="https://.../img1.webp&#10;https://.../img2.webp"
                   />
-                  <p className="text-[11px] font-semibold text-slate-500 mt-1">
-                    Tip: si pones <b>assets/...</b>, UnicOs lo resolverá automático a Score Store.
-                  </p>
                 </div>
 
                 <div className="md:col-span-2 flex items-center justify-between gap-3">
@@ -1002,10 +1135,6 @@ export default function Page() {
                       className="w-4 h-4"
                     />
                     Activo
-                    <HelpTip
-                      title="Activo"
-                      text="Si está desactivado, el producto no debe mostrarse en el catálogo público."
-                    />
                   </label>
 
                   <div className="flex gap-2">
@@ -1030,7 +1159,7 @@ export default function Page() {
               </div>
 
               <p className="text-[11px] font-semibold text-slate-500 mt-4">
-                Nota: Score Store consume estos datos vía Netlify Functions y valida precios en checkout.
+                Nota: Score Store consume estos datos vía <code>/.netlify/functions/catalog</code> y valida precios en checkout.
               </p>
             </div>
           </div>
@@ -1079,7 +1208,7 @@ export default function Page() {
         />
       );
 
-    if (active === "dashboard") return <DashboardView orgId={orgId} toast={show} />;
+    if (active === "dashboard") return <DashboardView orgId={orgId} token={authToken} toast={show} />;
     if (active === "products") return <ProductsView orgId={orgId} canWrite={canWrite} toast={show} />;
 
     return (
@@ -1088,7 +1217,7 @@ export default function Page() {
         text="Este módulo se activa cuando Score Store quede final y se confirme el flujo real (pago → envío → tracking)."
       />
     );
-  }, [ready, user, role, active, orgId, canWrite, show]);
+  }, [ready, user, role, active, orgId, canWrite, show, authToken]);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -1118,37 +1247,37 @@ export default function Page() {
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-2xl border border-slate-200 bg-white">
-              <span className="text-xs font-black text-slate-600">Org:</span>
-              <span className="text-xs font-black text-slate-900">{orgId === SCORE_ORG_ID ? "Score Store" : orgId}</span>
-              <HelpTip title="Organización" text="Esto define de qué tienda/operación estás viendo datos. Normalmente usarás Score Store aquí." />
-            </div>
+            <a
+              href="/scorestore-settings"
+              className="hidden sm:inline-flex px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm"
+              title="Control de Score Store"
+            >
+              Site Settings
+            </a>
 
             <button
               type="button"
               onClick={logout}
-              className="w-10 h-10 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center"
-              aria-label="Cerrar sesión"
+              className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm flex items-center gap-2"
               title="Cerrar sesión"
             >
-              <LogOut size={18} />
+              <LogOut size={16} /> Salir
             </button>
           </div>
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6">
+      {/* Body */}
+      <div className="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-12 gap-4">
         {/* Sidebar */}
         <aside
           className={clsx(
-            "md:block",
-            navOpen ? "block" : "hidden"
+            "md:col-span-3 lg:col-span-2",
+            navOpen ? "block" : "hidden md:block"
           )}
         >
-          <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-4 sticky top-[84px]">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3">Menú</p>
-
-            <div className="space-y-2">
+          <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-3">
+            <nav className="space-y-1">
               {navItems.map((it) => (
                 <button
                   key={it.id}
@@ -1158,48 +1287,32 @@ export default function Page() {
                     setNavOpen(false);
                   }}
                   className={clsx(
-                    "w-full flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border font-black text-sm",
-                    active === it.id
-                      ? "border-sky-200 bg-sky-50 text-sky-900"
-                      : "border-slate-200 bg-white hover:bg-slate-50 text-slate-900"
+                    "w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-black text-sm",
+                    active === it.id ? "bg-slate-900 text-white" : "bg-white hover:bg-slate-50 text-slate-900"
                   )}
                 >
-                  <span className="flex items-center gap-3">
-                    <span className={clsx("w-9 h-9 rounded-2xl flex items-center justify-center border",
-                      active === it.id ? "bg-white border-sky-200 text-sky-700" : "bg-slate-50 border-slate-200 text-slate-700"
-                    )}>
-                      {it.icon}
-                    </span>
-                    {it.label}
-                  </span>
-                  <ChevronDown size={16} className={clsx("opacity-30", active === it.id ? "rotate-[-90deg]" : "rotate-[-90deg]")} />
+                  {it.icon}
+                  {it.label}
                 </button>
               ))}
-            </div>
+            </nav>
 
-            <Divider />
-
-            <div className="space-y-3">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Ayuda rápida</p>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm font-black text-slate-900">¿Te perdiste?</p>
-                <p className="text-sm font-semibold text-slate-600 mt-1">
-                  Busca los íconos <b>?</b>. Explican cada parte sin tecnicismos.
-                </p>
-              </div>
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Rol</p>
+              <p className="text-sm font-black text-slate-900 mt-1">{role || "—"}</p>
+              <p className="text-xs font-semibold text-slate-600 mt-1">
+                Organización: <span className="font-black">{orgId.slice(0, 8)}…</span>
+              </p>
             </div>
+          </div>
+
+          <div className="mt-4">
+            <AiDock />
           </div>
         </aside>
 
         {/* Main */}
-        <main className="min-w-0">
-          {view}
-
-          {/* AI Dock */}
-          <div className="mt-6">
-            <AiDock orgId={orgId} role={role} />
-          </div>
-        </main>
+        <main className="md:col-span-9 lg:col-span-10 space-y-4">{view}</main>
       </div>
     </div>
   );
