@@ -15,28 +15,37 @@ function getBearerToken(req) {
 }
 
 const isUuid = (s) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    String(s || "").trim()
-  );
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || "").trim());
 
 const normEmail = (s) => String(s || "").trim().toLowerCase();
 
 async function getMyRole(sb, orgId, user) {
   const myEmail = normEmail(user?.email);
 
-  const { data: mem } = await sb
+  // Try org_id first
+  const q1 = await sb
+    .from("admin_users")
+    .select("role,is_active")
+    .eq("org_id", orgId)
+    .eq("is_active", true)
+    .or(`user_id.eq.${user?.id || "00000000-0000-0000-0000-000000000000"},email.ilike.${myEmail}`)
+    .limit(1)
+    .maybeSingle();
+
+  if (!q1?.error && q1?.data?.is_active) return String(q1.data.role || "").toLowerCase();
+
+  // Fallback organization_id
+  const q2 = await sb
     .from("admin_users")
     .select("role,is_active")
     .eq("organization_id", orgId)
     .eq("is_active", true)
-    .or(
-      `user_id.eq.${user?.id || "00000000-0000-0000-0000-000000000000"},email.ilike.${myEmail}`
-    )
+    .or(`user_id.eq.${user?.id || "00000000-0000-0000-0000-000000000000"},email.ilike.${myEmail}`)
     .limit(1)
     .maybeSingle();
 
-  if (!mem?.is_active) return null;
-  return String(mem?.role || "").toLowerCase();
+  if (!q2?.data?.is_active) return null;
+  return String(q2.data.role || "").toLowerCase();
 }
 
 export async function GET(req) {
@@ -61,8 +70,8 @@ export async function GET(req) {
 
     const { data: rows, error } = await sb
       .from("audit_log")
-      .select("id, created_at, actor_email, action, entity, entity_id, summary, meta")
-      .eq("organization_id", orgId)
+      .select("id, created_at, actor_email, action, entity, entity_id, summary, meta, org_id, organization_id")
+      .or(`org_id.eq.${orgId},organization_id.eq.${orgId}`)
       .order("created_at", { ascending: false })
       .limit(limit);
 
