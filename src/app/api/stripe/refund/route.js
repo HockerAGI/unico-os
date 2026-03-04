@@ -19,19 +19,31 @@ const normEmail = (s) => String(s || "").trim().toLowerCase();
 
 async function getMyRole(sb, orgId, user) {
   const myEmail = normEmail(user?.email);
-  const { data: mem } = await sb
+
+  // Try org_id first
+  const q1 = await sb
+    .from("admin_users")
+    .select("role,is_active")
+    .eq("org_id", orgId)
+    .eq("is_active", true)
+    .or(`user_id.eq.${user?.id || "00000000-0000-0000-0000-000000000000"},email.ilike.${myEmail}`)
+    .limit(1)
+    .maybeSingle();
+
+  if (!q1?.error && q1?.data?.is_active) return String(q1.data.role || "").toLowerCase();
+
+  // Fallback organization_id
+  const q2 = await sb
     .from("admin_users")
     .select("role,is_active")
     .eq("organization_id", orgId)
     .eq("is_active", true)
-    .or(
-      `user_id.eq.${user?.id || "00000000-0000-0000-0000-000000000000"},email.ilike.${myEmail}`
-    )
+    .or(`user_id.eq.${user?.id || "00000000-0000-0000-0000-000000000000"},email.ilike.${myEmail}`)
     .limit(1)
     .maybeSingle();
 
-  if (!mem?.is_active) return null;
-  return String(mem?.role || "").toLowerCase();
+  if (!q2?.data?.is_active) return null;
+  return String(q2.data.role || "").toLowerCase();
 }
 
 export async function POST(req) {
@@ -58,9 +70,9 @@ export async function POST(req) {
 
     const { data: order, error: oErr } = await sb
       .from("orders")
-      .select("id, stripe_payment_intent_id, stripe_session_id, status, amount_total_mxn")
-      .eq("organization_id", orgId)
+      .select("id, stripe_payment_intent_id, stripe_session_id, status, amount_total_mxn, org_id, organization_id")
       .eq("id", orderId)
+      .or(`org_id.eq.${orgId},organization_id.eq.${orgId}`)
       .maybeSingle();
 
     if (oErr || !order) return json(404, { ok: false, error: "Pedido no encontrado." });
@@ -87,8 +99,8 @@ export async function POST(req) {
     await sb
       .from("orders")
       .update({ status: "refunded", updated_at: new Date().toISOString() })
-      .eq("organization_id", orgId)
-      .eq("id", orderId);
+      .eq("id", orderId)
+      .or(`org_id.eq.${orgId},organization_id.eq.${orgId}`);
 
     await writeAudit(sb, {
       organization_id: orgId,
