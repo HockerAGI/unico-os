@@ -1,198 +1,125 @@
-// src/app/api/envia/summary/route.js
+import { NextResponse } from "next/server";
+import { serverSupabase } from "@/lib/serverSupabase";
+import { requireUserFromToken } from "@/lib/authServer";
+import { hasPerm } from "@/lib/authz";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { NextResponse } from "next/server";
-import { serverSupabase, requireUserFromToken } from "@/lib/serverSupabase";
-import { hasPerm } from "@/lib/authz";
-import { writeAudit } from "@/lib/auditServer";
-
-const json = (status, payload) => NextResponse.json(payload, { status });
-
-function getBearerToken(req) {
-  const h = req.headers.get("authorization") || "";
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  return m ? m[1] : "";
-}
-
-const isUuid = (s) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || "").trim());
-
-const normEmail = (s) => String(s || "").trim().toLowerCase();
-
-async function getMyRole(sb, orgId, user) {
-  const myEmail = normEmail(user?.email);
-  const uid = user?.id || "00000000-0000-0000-0000-000000000000";
-
-  const q1 = await sb
-    .from("admin_users")
-    .select("role,is_active")
-    .eq("org_id", orgId)
-    .eq("is_active", true)
-    .or(`user_id.eq.${uid},email.ilike.${myEmail}`)
-    .limit(1)
-    .maybeSingle();
-
-  if (!q1?.error && q1?.data?.is_active) return String(q1.data.role || "").toLowerCase();
-
-  const q2 = await sb
-    .from("admin_users")
-    .select("role,is_active")
-    .eq("organization_id", orgId)
-    .eq("is_active", true)
-    .or(`user_id.eq.${uid},email.ilike.${myEmail}`)
-    .limit(1)
-    .maybeSingle();
-
-  if (!q2?.error && q2?.data?.is_active) return String(q2.data.role || "").toLowerCase();
-  return null;
-}
-
-const ENVIA_BASE = process.env.ENVIA_BASE || "https://api.envia.com";
-function enviaKey() {
-  const key = process.env.ENVIA_API_KEY;
-  if (!key) throw new Error("Falta ENVIA_API_KEY");
-  return key;
-}
-
-async function enviaPOST(path, body) {
-  const res = await fetch(`${ENVIA_BASE}${path}`, {
-    method: "POST",
+const json = (data, status = 200) =>
+  NextResponse.json(data, {
+    status,
     headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${enviaKey()}`,
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
     },
-    body: JSON.stringify(body || {}),
   });
-
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(String(data?.message || `Envía error (${res.status})`));
-  return data;
-}
 
 const num = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
-export async function POST(req) {
+const pickTotalFromRaw = (raw) => {
+  // diferentes formas que ya hemos visto en raw
+  return (
+    num(raw?.totalAmount) ||
+    num(raw?.data?.totalAmount) ||
+    num(raw?.shipment?.totalAmount) ||
+    num(raw?.data?.shipment?.totalAmount) ||
+    0
+  );
+};
+
+const pickTrackingFromRaw = (raw) => {
+  const t =
+    raw?.trackingNumber ||
+    raw?.tracking_number ||
+    raw?.data?.trackingNumber ||
+    raw?.data?.tracking_number ||
+    raw?.shipment?.trackingNumber ||
+    raw?.shipment?.tracking_number ||
+    null;
+  return t ? String(t) : null;
+};
+
+const pickCarrierFromRaw = (raw) => {
+  const c =
+    raw?.carrier ||
+    raw?.carrier_name ||
+    raw?.data?.carrier ||
+    raw?.data?.carrier_name ||
+    raw?.shipment?.carrier ||
+    raw?.shipment?.carrier_name ||
+    null;
+  return c ? String(c) : null;
+};
+
+export async function GET(req) {
   try {
+    const auth = req.headers.get("authorization") || "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    const user = await requireUserFromToken(token);
+
+    const { searchParams } = new URL(req.url);
+    const orgId = searchParams.get("org_id") || "";
+    const days = Math.min(180, Math.max(7, Number(searchParams.get("days") || "30")));
+
+    if (!orgId) return json({ ok: false, error: "Falta org_id" }, 400);
+
     const sb = serverSupabase();
-    const token = getBearerToken(req);
 
-    const { user, error: authErr } = await requireUserFromToken(sb, token);
-    if (authErr) return json(401, { ok: false, error: "No autorizado" });
+    const { data: adminRow, error: adminErr } = await sb
+      .from("admin_users")
+      .select("id, role, is_active, organization_id")
+      .eq("organization_id", orgId)
+      .eq("is_active", true)
+      .or(`user_id.eq.${user.id},email.ilike.${user.email || ""}`)
+      .limit(1)
+      .maybeSingle();
 
-    const body = await req.json().catch(() => ({}));
-    const orgId = String(body?.org_id || body?.organization_id || "").trim();
-    const includeTrack = !!body?.include_track;
+    if (adminErr || !adminRow) return json({ ok: false, error: "No autorizado" }, 403);
+    if (!hasPerm(adminRow.role, "view_finance")) return json({ ok: false, error: "Sin permisos" }, 403);
 
-    if (!isUuid(orgId)) return json(400, { ok: false, error: "org_id inválido" });
+    const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
 
-    const role = await getMyRole(sb, orgId, user);
-    if (!role || !(hasPerm(role, "shipping") || hasPerm(role, "dashboard"))) {
-      return json(403, { ok: false, error: "Permisos insuficientes" });
-    }
-
-    // 1) Totales desde Supabase (rápido, real, lo que ya guardas)
-    const { data: labels, error: lErr } = await sb
+    // shipping_labels real (si tu DB usa org_id o organization_id, soportamos ambas)
+    const { data: labels, error: labelsErr } = await sb
       .from("shipping_labels")
-      .select("id, created_at, raw, stripe_session_id, org_id, organization_id")
+      .select("id, org_id, organization_id, stripe_session_id, raw, created_at")
       .or(`org_id.eq.${orgId},organization_id.eq.${orgId}`)
+      .gte("created_at", since)
       .order("created_at", { ascending: false })
       .limit(200);
 
-    if (lErr) throw lErr;
+    if (labelsErr) throw new Error(labelsErr.message);
 
-    const rowsFromDb = (labels || []).map((r) => {
+    const list = (labels || []).map((r) => {
       const raw = r?.raw || {};
-      const cost =
-        num(raw?.totalAmount) ||
-        num(raw?.data?.totalAmount) ||
-        num(raw?.shipment?.totalAmount) ||
-        0;
-
-      const tracking =
-        raw?.trackingNumber ||
-        raw?.tracking_number ||
-        raw?.data?.trackingNumber ||
-        raw?.data?.tracking_number ||
-        null;
-
-      const carrier =
-        raw?.carrier ||
-        raw?.carrierName ||
-        raw?.data?.carrier ||
-        raw?.data?.carrierName ||
-        null;
-
+      const total = pickTotalFromRaw(raw);
       return {
         id: r.id,
-        created_at: r.created_at || null,
-        cost_mxn: cost,
-        tracking: tracking ? String(tracking) : null,
-        carrier: carrier ? String(carrier) : null,
-        source: "supabase",
+        stripe_session_id: r.stripe_session_id || null,
+        created_at: r.created_at,
+        total_amount_mxn: total,
+        tracking: pickTrackingFromRaw(raw),
+        carrier: pickCarrierFromRaw(raw),
       };
     });
 
-    const totals = {
-      labels: rowsFromDb.length,
-      cost_mxn: rowsFromDb.reduce((a, x) => a + num(x.cost_mxn), 0),
-    };
+    const totalMXN = list.reduce((a, x) => a + num(x.total_amount_mxn), 0);
 
-    // 2) “Vista dashboard”: traer últimos envíos desde Envía (si hay API key)
-    // Esto depende de la cuenta/plan y del endpoint disponible. No adivinamos:
-    // intentamos una consulta estándar y si falla regresamos solo Supabase.
-    let rows = rowsFromDb;
-
-    try {
-      // Endpoint típico para listar envíos puede variar.
-      // Probamos uno seguro: /shipments (si tu cuenta lo soporta).
-      // Si tu Envía no lo soporta, no rompe: hacemos fallback a DB.
-      const list = await enviaPOST("/shipments", { limit: 20 });
-
-      const arr = Array.isArray(list?.data) ? list.data : Array.isArray(list) ? list : null;
-
-      if (arr) {
-        rows = arr.slice(0, 20).map((s, i) => ({
-          id: s?.id || s?._id || `envia_${i}`,
-          created_at: s?.created_at || s?.createdAt || null,
-          cost_mxn: num(s?.totalAmount || s?.total_amount || s?.price || 0),
-          tracking: s?.trackingNumber || s?.tracking_number || null,
-          carrier: s?.carrier || s?.carrierName || null,
-          source: "envia",
-        }));
-      }
-    } catch {
-      // keep DB rows (real) if Envía list not supported
-    }
-
-    // Optionally attach tracking status (si el endpoint existe)
-    if (includeTrack) {
-      // (No forzamos porque en Envía varía por carrier/plan)
-    }
-
-    await writeAudit(sb, {
-      organization_id: orgId,
-      actor_email: normEmail(user?.email),
-      actor_user_id: user?.id || null,
-      action: "envia.summary",
-      entity: "envia",
-      entity_id: orgId,
-      summary: "Envía dashboard summary fetched",
-      meta: { labels: totals.labels, cost_mxn: totals.cost_mxn },
-      ip: req.headers.get("x-forwarded-for") || null,
-      user_agent: req.headers.get("user-agent") || null,
-    });
-
-    return json(200, {
+    return json({
       ok: true,
+      scope: { org_id: orgId, days, labels_count: list.length },
+      kpi: {
+        envia_cost_mxn: Math.round(totalMXN * 100) / 100,
+      },
+      labels: list.slice(0, 50),
       updated_at: new Date().toISOString(),
-      totals,
-      rows,
     });
   } catch (e) {
-    return json(500, { ok: false, error: String(e?.message || e) });
+    return json({ ok: false, error: String(e?.message || e) }, 500);
   }
 }
