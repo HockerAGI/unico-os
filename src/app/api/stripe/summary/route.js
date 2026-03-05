@@ -1,4 +1,4 @@
-// src/app/api/envia/summary/route.js
+// src/app/api/stripe/summary/route.js
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -24,6 +24,7 @@ async function getMyRole(sb, orgId, user) {
   const myEmail = normEmail(user?.email);
   const uid = user?.id || "00000000-0000-0000-0000-000000000000";
 
+  // org_id
   const q1 = await sb
     .from("admin_users")
     .select("role,is_active")
@@ -35,6 +36,7 @@ async function getMyRole(sb, orgId, user) {
 
   if (!q1?.error && q1?.data?.is_active) return String(q1.data.role || "").toLowerCase();
 
+  // organization_id fallback
   const q2 = await sb
     .from("admin_users")
     .select("role,is_active")
@@ -48,32 +50,50 @@ async function getMyRole(sb, orgId, user) {
   return null;
 }
 
-const ENVIA_BASE = process.env.ENVIA_BASE || "https://api.envia.com";
-function enviaKey() {
-  const key = process.env.ENVIA_API_KEY;
-  if (!key) throw new Error("Falta ENVIA_API_KEY");
+const STRIPE_API = "https://api.stripe.com/v1";
+
+function stripeKey() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("Falta STRIPE_SECRET_KEY");
   return key;
 }
 
-async function enviaPOST(path, body) {
-  const res = await fetch(`${ENVIA_BASE}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${enviaKey()}`,
-    },
-    body: JSON.stringify(body || {}),
+function fxToMXN(currency) {
+  const c = String(currency || "mxn").toLowerCase();
+  if (c === "mxn") return 1;
+  if (c === "usd") return Math.max(0.0001, Number(process.env.FX_USD_TO_MXN || 18));
+  const envKey = `FX_${c.toUpperCase()}_TO_MXN`;
+  const fx = Number(process.env[envKey] || NaN);
+  return Number.isFinite(fx) && fx > 0 ? fx : 1;
+}
+
+async function stripeGET(path, query = {}) {
+  const url = new URL(`${STRIPE_API}${path}`);
+  for (const [k, v] of Object.entries(query || {})) {
+    if (v === undefined || v === null) continue;
+    if (Array.isArray(v)) for (const it of v) url.searchParams.append(k, String(it));
+    else url.searchParams.set(k, String(v));
+  }
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: { Authorization: `Bearer ${stripeKey()}` },
   });
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(String(data?.message || `Envía error (${res.status})`));
+  if (!res.ok) throw new Error(String(data?.error?.message || `Stripe error (${res.status})`));
   return data;
 }
 
-const num = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
+function sumBalanceArr(arr) {
+  let totalMXN = 0;
+  for (const it of Array.isArray(arr) ? arr : []) {
+    const amount = Number(it?.amount || 0) || 0; // cents
+    const currency = String(it?.currency || "mxn").toLowerCase();
+    totalMXN += (amount / 100) * fxToMXN(currency);
+  }
+  return totalMXN;
+}
 
 export async function POST(req) {
   try {
@@ -85,113 +105,70 @@ export async function POST(req) {
 
     const body = await req.json().catch(() => ({}));
     const orgId = String(body?.org_id || body?.organization_id || "").trim();
-    const includeTrack = !!body?.include_track;
-
     if (!isUuid(orgId)) return json(400, { ok: false, error: "org_id inválido" });
 
     const role = await getMyRole(sb, orgId, user);
-    if (!role || !(hasPerm(role, "shipping") || hasPerm(role, "dashboard"))) {
-      return json(403, { ok: false, error: "Permisos insuficientes" });
-    }
+    if (!role || !hasPerm(role, "dashboard")) return json(403, { ok: false, error: "Permisos insuficientes" });
 
-    // 1) Totales desde Supabase (rápido, real, lo que ya guardas)
-    const { data: labels, error: lErr } = await sb
-      .from("shipping_labels")
-      .select("id, created_at, raw, stripe_session_id, org_id, organization_id")
-      .or(`org_id.eq.${orgId},organization_id.eq.${orgId}`)
-      .order("created_at", { ascending: false })
-      .limit(200);
+    // Balance actual
+    const bal = await stripeGET("/balance");
 
-    if (lErr) throw lErr;
+    const available_mxn = sumBalanceArr(bal?.available);
+    const pending_mxn = sumBalanceArr(bal?.pending);
 
-    const rowsFromDb = (labels || []).map((r) => {
-      const raw = r?.raw || {};
-      const cost =
-        num(raw?.totalAmount) ||
-        num(raw?.data?.totalAmount) ||
-        num(raw?.shipment?.totalAmount) ||
-        0;
+    // Ventana 30 días
+    const now = Math.floor(Date.now() / 1000);
+    const since = now - 30 * 24 * 60 * 60;
 
-      const tracking =
-        raw?.trackingNumber ||
-        raw?.tracking_number ||
-        raw?.data?.trackingNumber ||
-        raw?.data?.tracking_number ||
-        null;
+    // Disputes (30d)
+    const disputes = await stripeGET("/disputes", { limit: 100, "created[gte]": since });
 
-      const carrier =
-        raw?.carrier ||
-        raw?.carrierName ||
-        raw?.data?.carrier ||
-        raw?.data?.carrierName ||
-        null;
+    // Refunds (30d)
+    const refunds = await stripeGET("/refunds", { limit: 100, "created[gte]": since });
 
-      return {
-        id: r.id,
-        created_at: r.created_at || null,
-        cost_mxn: cost,
-        tracking: tracking ? String(tracking) : null,
-        carrier: carrier ? String(carrier) : null,
-        source: "supabase",
-      };
-    });
+    // Payouts recientes (para “dashboard feel”)
+    const payouts = await stripeGET("/payouts", { limit: 20 });
 
-    const totals = {
-      labels: rowsFromDb.length,
-      cost_mxn: rowsFromDb.reduce((a, x) => a + num(x.cost_mxn), 0),
+    const payload = {
+      ok: true,
+      updated_at: new Date().toISOString(),
+      balance: {
+        available_mxn,
+        pending_mxn,
+      },
+      last_30_days: {
+        disputes_count: Array.isArray(disputes?.data) ? disputes.data.length : 0,
+        refunds_count: Array.isArray(refunds?.data) ? refunds.data.length : 0,
+      },
+      payouts: (Array.isArray(payouts?.data) ? payouts.data : []).slice(0, 10).map((p) => ({
+        id: p?.id || null,
+        amount_mxn: ((Number(p?.amount || 0) || 0) / 100) * fxToMXN(p?.currency),
+        currency: String(p?.currency || "").toLowerCase() || null,
+        status: p?.status || null,
+        arrival_date: p?.arrival_date ? new Date(p.arrival_date * 1000).toISOString() : null,
+        created: p?.created ? new Date(p.created * 1000).toISOString() : null,
+      })),
     };
-
-    // 2) “Vista dashboard”: traer últimos envíos desde Envía (si hay API key)
-    // Esto depende de la cuenta/plan y del endpoint disponible. No adivinamos:
-    // intentamos una consulta estándar y si falla regresamos solo Supabase.
-    let rows = rowsFromDb;
-
-    try {
-      // Endpoint típico para listar envíos puede variar.
-      // Probamos uno seguro: /shipments (si tu cuenta lo soporta).
-      // Si tu Envía no lo soporta, no rompe: hacemos fallback a DB.
-      const list = await enviaPOST("/shipments", { limit: 20 });
-
-      const arr = Array.isArray(list?.data) ? list.data : Array.isArray(list) ? list : null;
-
-      if (arr) {
-        rows = arr.slice(0, 20).map((s, i) => ({
-          id: s?.id || s?._id || `envia_${i}`,
-          created_at: s?.created_at || s?.createdAt || null,
-          cost_mxn: num(s?.totalAmount || s?.total_amount || s?.price || 0),
-          tracking: s?.trackingNumber || s?.tracking_number || null,
-          carrier: s?.carrier || s?.carrierName || null,
-          source: "envia",
-        }));
-      }
-    } catch {
-      // keep DB rows (real) if Envía list not supported
-    }
-
-    // Optionally attach tracking status (si el endpoint existe)
-    if (includeTrack) {
-      // (No forzamos porque en Envía varía por carrier/plan)
-    }
 
     await writeAudit(sb, {
       organization_id: orgId,
       actor_email: normEmail(user?.email),
       actor_user_id: user?.id || null,
-      action: "envia.summary",
-      entity: "envia",
+      action: "stripe.summary",
+      entity: "stripe",
       entity_id: orgId,
-      summary: "Envía dashboard summary fetched",
-      meta: { labels: totals.labels, cost_mxn: totals.cost_mxn },
+      summary: "Stripe dashboard summary fetched",
+      meta: {
+        available_mxn,
+        pending_mxn,
+        disputes_30d: payload.last_30_days.disputes_count,
+        refunds_30d: payload.last_30_days.refunds_count,
+      },
       ip: req.headers.get("x-forwarded-for") || null,
       user_agent: req.headers.get("user-agent") || null,
     });
 
-    return json(200, {
-      ok: true,
-      updated_at: new Date().toISOString(),
-      totals,
-      rows,
-    });
+    return json(200, payload);
   } catch (e) {
     return json(500, { ok: false, error: String(e?.message || e) });
   }
