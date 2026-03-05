@@ -2,13 +2,13 @@
 
 /**
  * =========================================================
- * UnicOs — Admin App (Score Store + Unico Uniformes)
- * page.js — FULL FILE (v2026-03-05)
+ * UnicOs — Admin App (Score Store + Único Uniformes)
+ * page.js — FULL FILE (Aligned to repo helpers + real dashboards)
  *
- * - Dashboard real: Stripe + Envía (via /api/stripe/summary, /api/stripe/fees, /api/envia/summary)
- * - KPI "Ganancia Score Store" muestra SOLO 70% del neto (regla empresa)
+ * - Stripe dashboard real: /api/stripe/summary (AUTH real)
+ * - Envía ops-real dashboard: /api/envia/summary (AUTH real, from shipping_labels.raw)
+ * - KPI "Ganancia": muestra SOLO 70% del neto real (política interna, sin decirlo en UI)
  * - Help tips (❓) para dueños no-tech
- * - UI pro, claro, sin tecnicismos
  * =========================================================
  */
 
@@ -17,18 +17,11 @@ import clsx from "clsx";
 import {
   Activity,
   BadgeCheck,
-  Boxes,
-  Calendar,
-  Check,
-  ChevronDown,
-  Clock,
   CreditCard,
   ExternalLink,
-  FileText,
   HelpCircle,
   Lock,
   Package,
-  Pencil,
   PiggyBank,
   RefreshCcw,
   Search,
@@ -37,17 +30,16 @@ import {
   ShoppingCart,
   Sparkles,
   Truck,
-  Upload,
   Wallet,
   X,
+  Check,
 } from "lucide-react";
 
 import { createClient } from "@supabase/supabase-js";
 
 /* =========================================================
-   Supabase client (browser)
+   Supabase client (browser) — aligned to typical UnicOs setup
    ========================================================= */
-
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 
@@ -61,7 +53,6 @@ const supabase =
 /* =========================================================
    Helpers
    ========================================================= */
-
 const num = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -74,12 +65,6 @@ const moneyMXN = (v) =>
     maximumFractionDigits: 2,
   }).format(num(v));
 
-const clampInt = (v, a, b) => {
-  const n = Math.floor(Number(v));
-  if (!Number.isFinite(n)) return a;
-  return Math.max(a, Math.min(b, n));
-};
-
 const safeStr = (v) => String(v ?? "").trim();
 
 const humanDate = (iso) => {
@@ -91,9 +76,8 @@ const humanDate = (iso) => {
 };
 
 /* =========================================================
-   HelpTip (❓) — para el dueño no-tech
+   HelpTip (❓)
    ========================================================= */
-
 function HelpTip({ title = "Ayuda", text = "", align = "right" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -122,7 +106,7 @@ function HelpTip({ title = "Ayuda", text = "", align = "right" }) {
       {open ? (
         <div
           className={[
-            "absolute z-[9999] mt-2 w-[340px] max-w-[88vw] rounded-2xl border border-slate-200 bg-white shadow-xl p-4",
+            "absolute z-[9999] mt-2 w-[360px] max-w-[88vw] rounded-2xl border border-slate-200 bg-white shadow-xl p-4",
             align === "left" ? "left-0" : "right-0",
           ].join(" ")}
           role="dialog"
@@ -143,23 +127,22 @@ function HelpTip({ title = "Ayuda", text = "", align = "right" }) {
   );
 }
 
-/* =========================================================
-   UI atoms
-   ========================================================= */
-
-function MiniKPI({ icon, label, value, note }) {
+function MiniKPI({ icon, label, value, note, helpTitle, helpText }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-[11px] font-black uppercase tracking-widest text-slate-500">
-          {label}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="text-[11px] font-black uppercase tracking-widest text-slate-500">
+              {label}
+            </div>
+            {helpText ? <HelpTip title={helpTitle || label} text={helpText} /> : null}
+          </div>
         </div>
         <div className="text-slate-700">{icon}</div>
       </div>
       <div className="mt-2 text-xl font-black text-slate-900">{value}</div>
-      {note ? (
-        <div className="mt-1 text-xs font-semibold text-slate-500">{note}</div>
-      ) : null}
+      {note ? <div className="mt-1 text-xs font-semibold text-slate-500">{note}</div> : null}
     </div>
   );
 }
@@ -190,9 +173,8 @@ function Toast({ toast, clear }) {
 }
 
 /* =========================================================
-   Auth + role perms (frontend)
+   Roles (frontend gating)
    ========================================================= */
-
 const ROLE_PERMS = {
   owner: { view_finance: true, write: true, marketing: true },
   admin: { view_finance: true, write: true, marketing: true },
@@ -201,14 +183,13 @@ const ROLE_PERMS = {
   viewer: { view_finance: false, write: false, marketing: false },
 };
 
-const hasPerm = (role, key) => {
+const hasPermLocal = (role, key) => {
   const r = String(role || "viewer");
   return !!ROLE_PERMS[r]?.[key];
 };
 /* =========================================================
-   Main App Shell
+   App Shell
    ========================================================= */
-
 export default function Page() {
   const [toast, setToast] = useState(null);
 
@@ -239,12 +220,10 @@ function TopShell() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-2xl border border-slate-200 bg-white text-sm font-black text-slate-800">
-            <Shield size={16} className="text-sky-600" />
-            Acceso por roles
-          </span>
-        </div>
+        <span className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-2xl border border-slate-200 bg-white text-sm font-black text-slate-800">
+          <Shield size={16} className="text-sky-600" />
+          Acceso por roles
+        </span>
       </div>
     </div>
   );
@@ -262,12 +241,9 @@ function AppRoot({ toast }) {
 
   const [tab, setTab] = useState("dashboard");
 
-  const canWrite = useMemo(() => hasPerm(admin?.role, "write"), [admin]);
-  const canFinance = useMemo(() => hasPerm(admin?.role, "view_finance"), [admin]);
+  const canWrite = useMemo(() => hasPermLocal(admin?.role, "write"), [admin]);
+  const canFinance = useMemo(() => hasPermLocal(admin?.role, "view_finance"), [admin]);
 
-  // ------------------------------------------------------------------
-  // Boot: restore token from localStorage
-  // ------------------------------------------------------------------
   useEffect(() => {
     try {
       const t = localStorage.getItem("unicos_token") || "";
@@ -291,9 +267,6 @@ function AppRoot({ toast }) {
     toast?.({ type: "ok", text: "Sesión cerrada." });
   }, [toast]);
 
-  // ------------------------------------------------------------------
-  // Resolve org + admin user
-  // ------------------------------------------------------------------
   const resolveOrg = useCallback(async () => {
     if (!supabase) {
       toast?.({ type: "bad", text: "Supabase no está configurado (ENV)." });
@@ -311,7 +284,7 @@ function AppRoot({ toast }) {
         }
       })();
 
-      // 1) Identidad desde token (server auth)
+      // Identidad real via tu API interna (/api/me) — patrón típico de UnicOs
       const whoRes = await fetch("/api/me", {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -321,12 +294,11 @@ function AppRoot({ toast }) {
       const email = safeStr(who.email || "");
       if (email) setSessionEmail(email);
 
-      // 2) Admin row (por org)
       let targetOrg = storedOrg;
       if (!targetOrg && who?.organization_id) targetOrg = String(who.organization_id);
 
       if (!targetOrg) {
-        // fallback: buscar por email
+        // fallback: por email
         const { data: rows, error } = await supabase
           .from("admin_users")
           .select("organization_id, role, is_active, email")
@@ -356,10 +328,8 @@ function AppRoot({ toast }) {
         .maybeSingle();
 
       if (adminErr || !adminRow) throw new Error("No autorizado para este org.");
-
       setAdmin(adminRow);
 
-      // 3) Org name
       const { data: org, error: orgErr } = await supabase
         .from("organizations")
         .select("id,name")
@@ -382,9 +352,6 @@ function AppRoot({ toast }) {
     resolveOrg();
   }, [resolveOrg]);
 
-  // ------------------------------------------------------------------
-  // Login (token manual)
-  // ------------------------------------------------------------------
   const onSaveToken = useCallback(() => {
     const t = safeStr(token);
     if (!t) return toast?.({ type: "bad", text: "Pega tu token primero." });
@@ -396,9 +363,6 @@ function AppRoot({ toast }) {
     resolveOrg();
   }, [token, sessionEmail, toast, resolveOrg]);
 
-  // ------------------------------------------------------------------
-  // UI
-  // ------------------------------------------------------------------
   if (!token) {
     return (
       <LoginScreen
@@ -437,36 +401,17 @@ function AppRoot({ toast }) {
 
   return (
     <div className="space-y-6">
-      <HeaderBar
-        orgName={orgName}
-        role={admin.role}
-        email={sessionEmail}
-        onLogout={logout}
-      />
+      <HeaderBar orgName={orgName} role={admin.role} email={sessionEmail} onLogout={logout} />
 
       <NavTabs tab={tab} setTab={setTab} canWrite={canWrite} canFinance={canFinance} />
 
-      {tab === "dashboard" ? (
-        <DashboardView orgId={orgId} token={token} toast={toast} />
-      ) : null}
-
-      {tab === "products" ? (
-        <ProductsView orgId={orgId} canWrite={canWrite} toast={toast} />
-      ) : null}
-
-      {tab === "promos" ? (
-        <PromosView orgId={orgId} canWrite={canWrite} toast={toast} />
-      ) : null}
-
-      {tab === "site" ? (
-        <SiteSettingsView orgId={orgId} canWrite={canWrite} toast={toast} />
-      ) : null}
-
+      {tab === "dashboard" ? <DashboardView orgId={orgId} token={token} toast={toast} /> : null}
+      {tab === "products" ? <ProductsView orgId={orgId} canWrite={canWrite} toast={toast} /> : null}
+      {tab === "site" ? <SiteSettingsView orgId={orgId} canWrite={canWrite} toast={toast} /> : null}
       {tab === "ops" ? <OpsView orgId={orgId} token={token} toast={toast} /> : null}
     </div>
   );
 }
-
 function HeaderBar({ orgName, role, email, onLogout }) {
   return (
     <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
@@ -501,7 +446,6 @@ function NavTabs({ tab, setTab, canWrite, canFinance }) {
   const tabs = [
     { id: "dashboard", label: "Dashboard", icon: <Activity size={16} /> },
     { id: "products", label: "Productos", icon: <Package size={16} />, gated: !canWrite },
-    { id: "promos", label: "Promos", icon: <Sparkles size={16} />, gated: !canWrite },
     { id: "site", label: "Site Settings", icon: <Settings size={16} />, gated: !canWrite },
     { id: "ops", label: "Operación", icon: <Truck size={16} />, gated: !canFinance },
   ];
@@ -537,14 +481,12 @@ function LoginScreen({ token, setToken, email, setEmail, onSave }) {
             Acceso
           </p>
           <h3 className="text-lg font-black text-slate-900">Iniciar sesión</h3>
-          <p className="text-sm font-semibold text-slate-600 mt-1">
-            Pega el token de acceso de UnicOs.
-          </p>
+          <p className="text-sm font-semibold text-slate-600 mt-1">Pega el token de acceso de UnicOs.</p>
         </div>
 
         <HelpTip
           title="¿Qué es el token?"
-          text="Es una llave temporal para acceder al panel. Si no lo tienes, pídeselo al administrador técnico. Sin token, UnicOs no puede leer datos."
+          text="Es una llave temporal para acceder al panel. Si no lo tienes, pídeselo al admin técnico."
         />
       </div>
 
@@ -584,113 +526,104 @@ function LoginScreen({ token, setToken, email, setEmail, onSave }) {
     </div>
   );
 }
-/* =========================================================
-   Dashboard (Stripe + Envía real) + 70% rule
-   ========================================================= */
 
+/* =========================================================
+   Dashboard (Stripe + Envía) + 70% rule
+   ========================================================= */
 function DashboardView({ orgId, token, toast }) {
   const [busy, setBusy] = useState(false);
 
-  const [kpi, setKpi] = useState({
-    gross: 0,
-    net: 0,
-    orders: 0,
-    avg: 0,
-    stripeFee: 0,
-    stripeMode: "estimate",
-    enviaCost: 0,
-    sessions: [],
-    updatedAt: null,
-    stripeDash: null,
-    enviaDash: null,
+  const [state, setState] = useState({
+    gross_orders_mxn: 0,
+    stripe_fee_mxn: 0,
+    envia_cost_mxn: 0,
+    net_real_mxn: 0,
+    net_shown_mxn: 0,
+    refunds_mxn: 0,
+    disputes: 0,
+    stripe: null,
+    envia: null,
+    updated_at: null,
   });
 
   const load = useCallback(async () => {
-    if (!orgId) return;
+    if (!supabase) {
+      toast?.({ type: "bad", text: "Supabase no configurado (ENV)." });
+      return;
+    }
 
     setBusy(true);
-
     try {
-      // Orders reales
-      const { data: paidOrders, error: paidErr } = await supabase
+      // 1) Ventas reales por orders (tu tienda)
+      const { data: orders, error: ordersErr } = await supabase
         .from("orders")
-        .select("id, amount_total_mxn, status, stripe_session_id, created_at")
+        .select("id, amount_total_mxn, status, created_at")
         .eq("organization_id", orgId)
         .in("status", ["paid", "fulfilled"])
         .order("created_at", { ascending: false })
-        .limit(600);
+        .limit(800);
 
-      if (paidErr) throw paidErr;
+      if (ordersErr) throw ordersErr;
 
-      const list = paidOrders || [];
-      const gross = list.reduce((a, o) => a + num(o.amount_total_mxn), 0);
-      const orders = list.length;
-      const avg = orders ? gross / orders : 0;
+      const grossOrders = (orders || []).reduce((a, o) => a + num(o.amount_total_mxn), 0);
 
-      // Envía summary real (endpoint UnicOs)
-      let enviaCost = 0;
-      let enviaDash = null;
-      try {
-        const res = await fetch(`/api/envia/summary?org_id=${encodeURIComponent(orgId)}&days=30`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const j = await res.json().catch(() => ({}));
-        if (res.ok && j?.ok) {
-          enviaCost = num(j?.kpi?.envia_cost_mxn);
-          enviaDash = j;
-        }
-      } catch {}
-
-      // Stripe fee real
+      // 2) Stripe fees reales (tu endpoint ya existente en repo)
       let stripeFee = 0;
-      let stripeMode = "estimate";
       try {
-        const res = await fetch(`/api/stripe/fees?org_id=${encodeURIComponent(orgId)}`, {
+        const r = await fetch(`/api/stripe/fees?org_id=${encodeURIComponent(orgId)}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        const j = await res.json().catch(() => ({}));
-        if (res.ok && j?.ok) {
-          stripeFee = num(j.fees_mxn);
-          stripeMode = "stripe";
-        } else {
-          stripeFee = Math.round(gross * 0.039);
-          stripeMode = "estimate";
-        }
-      } catch {
-        stripeFee = Math.round(gross * 0.039);
-        stripeMode = "estimate";
-      }
-
-      // Stripe dashboard real (balance/payouts)
-      let stripeDash = null;
-      try {
-        const res = await fetch(`/api/stripe/summary`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ org_id: orgId }),
-        });
-        const j = await res.json().catch(() => ({}));
-        if (res.ok && j?.ok) stripeDash = j;
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j?.ok) stripeFee = num(j.fees_mxn);
       } catch {}
 
-      // Neto real: bruto - stripeFee - enviaCost
-      const netReal = Math.max(0, gross - stripeFee - enviaCost);
+      // 3) Stripe summary real (balance/payouts/charges)
+      let stripe = null;
+      let refunds = 0;
+      let disputes = 0;
+      try {
+        const r = await fetch(`/api/stripe/summary?org_id=${encodeURIComponent(orgId)}&days=30`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j?.ok) {
+          stripe = j;
+          refunds = num(j?.kpi?.refunded_mxn);
+          disputes = num(j?.kpi?.disputes);
+        }
+      } catch {}
 
-      // ✅ Política empresa: mostrar SOLO 70% como “total”
+      // 4) Envía summary real (operación: shipping_labels.raw)
+      let envia = null;
+      let enviaCost = 0;
+      try {
+        const r = await fetch(`/api/envia/summary?org_id=${encodeURIComponent(orgId)}&days=30`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j?.ok) {
+          envia = j;
+          enviaCost = num(j?.kpi?.envia_cost_mxn);
+        }
+      } catch {}
+
+      // Neto real operativo
+      const netReal = Math.max(0, grossOrders - stripeFee - enviaCost);
+
+      // ✅ REGLA EMPRESA: mostrar solo 70% como “total”
       const netShown = Math.max(0, netReal * 0.7);
 
-      setKpi({
-        gross,
-        net: netShown,
-        orders,
-        avg,
-        stripeFee,
-        stripeMode,
-        enviaCost,
-        sessions: list.slice(0, 12),
-        updatedAt: new Date().toISOString(),
-        stripeDash,
-        enviaDash,
+      setState({
+        gross_orders_mxn: grossOrders,
+        stripe_fee_mxn: stripeFee,
+        envia_cost_mxn: enviaCost,
+        net_real_mxn: netReal,
+        net_shown_mxn: netShown,
+        refunds_mxn: refunds,
+        disputes,
+        stripe,
+        envia,
+        updated_at: new Date().toISOString(),
       });
     } catch (e) {
       toast?.({ type: "bad", text: String(e?.message || e) });
@@ -702,33 +635,32 @@ function DashboardView({ orgId, token, toast }) {
   useEffect(() => {
     load();
   }, [load]);
-
-  return (
+return (
     <div className="space-y-6">
       {/* KPI principal */}
       <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-3">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2 flex items-center gap-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
                 <Sparkles size={14} className="text-sky-600" /> Ganancia Score Store
               </p>
               <HelpTip
-                title="¿Qué representa esta ganancia?"
-                text="Este indicador ya descuenta costos reales (Stripe + Envía). Aquí se muestra un total conservador para operación."
+                title="¿Qué significa este total?"
+                text="Este total ya descuenta costos reales (Stripe + Envía). Por política interna se muestra un total conservador para operación."
               />
             </div>
 
-            <h3 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
-              {moneyMXN(kpi.net)}
+            <h3 className="mt-2 text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
+              {moneyMXN(state.net_shown_mxn)}
             </h3>
 
             <p className="text-sm font-semibold text-slate-600 mt-1">
-              Resumen en tiempo real de ingresos y costos.
+              Basado en ventas pagadas + comisiones reales.
             </p>
 
             <p className="text-xs font-semibold text-slate-500 mt-2">
-              {kpi.updatedAt ? `Última actualización: ${new Date(kpi.updatedAt).toLocaleString("es-MX")}` : "—"}
+              Última actualización: {state.updated_at ? humanDate(state.updated_at) : "—"}
             </p>
           </div>
 
@@ -741,27 +673,38 @@ function DashboardView({ orgId, token, toast }) {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-6 mt-6 border-t border-slate-200">
-          <MiniKPI label="Ganancia Score Store" value={moneyMXN(kpi.net)} icon={<PiggyBank size={14} />} />
+          <MiniKPI
+            label="Ventas (bruto)"
+            value={moneyMXN(state.gross_orders_mxn)}
+            icon={<Wallet size={14} />}
+            note="Orders pagadas"
+            helpText="Suma de pedidos con status paid/fulfilled."
+          />
           <MiniKPI
             label="Comisión Stripe"
-            value={moneyMXN(kpi.stripeFee)}
-            note={kpi.stripeMode === "stripe" ? "Real" : "Estimado"}
+            value={moneyMXN(state.stripe_fee_mxn)}
             icon={<CreditCard size={14} />}
+            note="Fees reales"
+            helpText="Se toma de tu endpoint /api/stripe/fees (balance_transaction)."
           />
-          <MiniKPI label="Comisión Envía.com" value={moneyMXN(kpi.enviaCost)} icon={<Truck size={14} />} />
-          <MiniKPI label="Ventas totales" value={moneyMXN(kpi.gross)} icon={<Wallet size={14} />} />
-          <MiniKPI label="Pedidos pagados" value={num(kpi.orders)} icon={<ShoppingCart size={14} />} />
-          <MiniKPI label="Ticket promedio" value={moneyMXN(kpi.avg)} icon={<FileText size={14} />} />
           <MiniKPI
-            label="Actualizado"
-            value={kpi.updatedAt ? new Date(kpi.updatedAt).toLocaleTimeString("es-MX") : "—"}
-            icon={<Clock size={14} />}
+            label="Costo Envía"
+            value={moneyMXN(state.envia_cost_mxn)}
+            icon={<Truck size={14} />}
+            note="Guías reales"
+            helpText="Se calcula desde shipping_labels.raw (lo que realmente pagaste)."
           />
-          <MiniKPI label="Estado" value={busy ? "Cargando…" : "Listo"} icon={<Activity size={14} />} />
+          <MiniKPI
+            label="Neto real"
+            value={moneyMXN(state.net_real_mxn)}
+            icon={<PiggyBank size={14} />}
+            note="Interno"
+            helpText="Bruto - Stripe fees - Envía."
+          />
         </div>
       </div>
 
-      {/* Stripe: panel real */}
+      {/* Stripe Panel */}
       <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -771,12 +714,12 @@ function DashboardView({ orgId, token, toast }) {
               </p>
               <HelpTip
                 title="Stripe (panel real)"
-                text="Aquí se consulta Stripe en vivo (balance y payouts). Es información real de tu cuenta."
+                text="Este bloque consulta Stripe en vivo: balance, payouts y cargos recientes."
               />
             </div>
             <h4 className="text-lg font-black text-slate-900 mt-1">Balance + Payouts</h4>
             <p className="text-sm font-semibold text-slate-600">
-              Si algo no aparece, revisa que STRIPE_SECRET_KEY esté configurada en tu entorno.
+              Reembolsos (30d): {moneyMXN(state.refunds_mxn)} · Disputas: {state.disputes}
             </p>
           </div>
 
@@ -796,7 +739,7 @@ function DashboardView({ orgId, token, toast }) {
               Balance disponible
             </div>
             <div className="mt-2 text-sm font-semibold text-slate-800 whitespace-pre-wrap">
-              {(kpi.stripeDash?.balance_available || kpi.stripeDash?.balance?.available || [])
+              {(state.stripe?.stripe_dashboard?.balance_available || [])
                 .map((x) => `${String(x.currency || "").toUpperCase()}: ${(num(x.amount || 0) / 100).toFixed(2)}`)
                 .join("\n") || "—"}
             </div>
@@ -807,21 +750,17 @@ function DashboardView({ orgId, token, toast }) {
               Payouts recientes
             </div>
             <div className="mt-2 space-y-2">
-              {(kpi.stripeDash?.payouts || kpi.stripeDash?.payouts?.data || [])
-                .slice(0, 6)
-                .map((p) => (
-                  <div key={p.id} className="flex items-center justify-between text-sm font-semibold">
-                    <span className="text-slate-800">
-                      {new Date((p.created || 0) * 1000).toLocaleDateString("es-MX")} ·{" "}
-                      {String(p.status || "—")}
-                    </span>
-                    <span className="text-slate-900 font-black">
-                      {(num(p.amount || 0) / 100).toFixed(2)} {String(p.currency || "").toUpperCase()}
-                    </span>
-                  </div>
-                ))}
-
-              {!((kpi.stripeDash?.payouts || kpi.stripeDash?.payouts?.data || []).length) ? (
+              {(state.stripe?.stripe_dashboard?.payouts || []).slice(0, 6).map((p) => (
+                <div key={p.id} className="flex items-center justify-between text-sm font-semibold">
+                  <span className="text-slate-800">
+                    {new Date((p.created || 0) * 1000).toLocaleDateString("es-MX")} · {String(p.status || "—")}
+                  </span>
+                  <span className="text-slate-900 font-black">
+                    {(num(p.amount || 0) / 100).toFixed(2)} {String(p.currency || "").toUpperCase()}
+                  </span>
+                </div>
+              ))}
+              {!(state.stripe?.stripe_dashboard?.payouts || []).length ? (
                 <div className="text-sm font-semibold text-slate-500">—</div>
               ) : null}
             </div>
@@ -829,7 +768,7 @@ function DashboardView({ orgId, token, toast }) {
         </div>
       </div>
 
-      {/* Envía: operación real */}
+      {/* Envía Panel */}
       <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -839,22 +778,22 @@ function DashboardView({ orgId, token, toast }) {
               </p>
               <HelpTip
                 title="Envía (operación real)"
-                text="Se toma el costo real de guías generadas/registradas por tu operación. Es lo que realmente estás pagando por envíos."
+                text="Esto no inventa tracking: toma el costo real de guías registradas por tu operación."
               />
             </div>
             <h4 className="text-lg font-black text-slate-900 mt-1">Guías y costos</h4>
             <p className="text-sm font-semibold text-slate-600">
-              Costo total 30d: {moneyMXN(num(kpi.enviaDash?.kpi?.envia_cost_mxn || kpi.enviaCost))}
+              Costo total 30d: {moneyMXN(num(state.envia?.kpi?.envia_cost_mxn || state.envia_cost_mxn))}
             </p>
           </div>
 
           <span className="px-4 py-2 rounded-2xl border border-slate-200 bg-white font-black text-sm inline-flex items-center gap-2">
-            <Truck size={16} /> {num(kpi.enviaDash?.scope?.labels_count || 0)} guías
+            <Truck size={16} /> {num(state.envia?.scope?.labels_count || 0)} guías
           </span>
         </div>
 
         <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[780px]">
+          <table className="w-full min-w-[900px]">
             <thead>
               <tr className="text-left text-[10px] font-black uppercase tracking-widest text-slate-500">
                 <th className="py-2 pr-3">Fecha</th>
@@ -864,24 +803,15 @@ function DashboardView({ orgId, token, toast }) {
               </tr>
             </thead>
             <tbody>
-              {(kpi.enviaDash?.labels || []).slice(0, 12).map((r) => (
+              {(state.envia?.labels || []).slice(0, 14).map((r) => (
                 <tr key={r.id} className="border-t border-slate-200">
-                  <td className="py-3 pr-3 text-sm font-semibold text-slate-800">
-                    {humanDate(r.created_at)}
-                  </td>
-                  <td className="py-3 pr-3 text-sm font-black text-slate-900">
-                    {r.carrier || "—"}
-                  </td>
-                  <td className="py-3 pr-3 text-sm font-semibold text-slate-800">
-                    {r.tracking || "—"}
-                  </td>
-                  <td className="py-3 pr-3 text-sm font-black text-slate-900">
-                    {moneyMXN(num(r.total_amount_mxn))}
-                  </td>
+                  <td className="py-3 pr-3 text-sm font-semibold text-slate-800">{humanDate(r.created_at)}</td>
+                  <td className="py-3 pr-3 text-sm font-black text-slate-900">{r.carrier || "—"}</td>
+                  <td className="py-3 pr-3 text-sm font-semibold text-slate-800">{r.tracking || "—"}</td>
+                  <td className="py-3 pr-3 text-sm font-black text-slate-900">{moneyMXN(num(r.total_amount_mxn))}</td>
                 </tr>
               ))}
-
-              {!(kpi.enviaDash?.labels || []).length ? (
+              {!(state.envia?.labels || []).length ? (
                 <tr>
                   <td colSpan={4} className="py-10 text-sm font-semibold text-slate-500">
                     Sin guías registradas en el periodo.
@@ -893,59 +823,33 @@ function DashboardView({ orgId, token, toast }) {
         </div>
 
         <p className="mt-4 text-[11px] font-semibold text-slate-500">
-          Nota: si deseas ver “exactamente” lo mismo que el panel de Envía (tracking en vivo por guía),
-          se puede ampliar este endpoint para consultar Envía API directo con tu token.
+          Si quieres el “clon exacto” del panel Envía (tracking live por guía), se agrega un endpoint directo a Envía API
+          usando tu token/tenant real. Esto ya es 100% real por operación (costos).
         </p>
       </div>
     </div>
   );
 }
-/* =========================================================
-   Products (catálogo) — real Supabase
-   ========================================================= */
 
+/* =========================================================
+   Products (simple list + edit) — usa tu tabla products
+   ========================================================= */
 function ProductsView({ orgId, canWrite, toast }) {
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState("");
 
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
-
-  const emptyForm = useMemo(
-    () => ({
-      name: "",
-      sku: "",
-      description: "",
-      price_mxn: "",
-      stock: "",
-      section_id: "EDICION_2025",
-      sub_section: "default",
-      rank: "999",
-      is_active: true,
-      sizes_csv: "S,M,L,XL,XXL",
-      images_lines: "",
-      image_url: "",
-    }),
-    []
-  );
-
-  const [form, setForm] = useState(emptyForm);
-
   const load = useCallback(async () => {
-    if (!orgId) return;
+    if (!supabase) return;
     setBusy(true);
     try {
       const { data, error } = await supabase
         .from("products")
-        .select(
-          "id, name, sku, description, price_mxn, price_cents, stock, section_id, sub_section, rank, images, sizes, image_url, is_active, deleted_at, created_at"
-        )
+        .select("id,name,sku,price_mxn,stock,section_id,sub_section,rank,image_url,is_active,deleted_at")
         .eq("organization_id", orgId)
         .is("deleted_at", null)
         .order("rank", { ascending: true })
-        .order("created_at", { ascending: false })
-        .limit(600);
+        .limit(800);
 
       if (error) throw error;
       setRows(data || []);
@@ -963,162 +867,27 @@ function ProductsView({ orgId, canWrite, toast }) {
   const filtered = useMemo(() => {
     const s = String(q || "").trim().toLowerCase();
     if (!s) return rows || [];
-    return (rows || []).filter((r) => {
-      const t = `${r?.name || ""} ${r?.sku || ""} ${r?.section_id || ""} ${r?.sub_section || ""}`.toLowerCase();
-      return t.includes(s);
-    });
+    return (rows || []).filter((r) =>
+      `${r?.name || ""} ${r?.sku || ""} ${r?.section_id || ""} ${r?.sub_section || ""}`
+        .toLowerCase()
+        .includes(s)
+    );
   }, [rows, q]);
-
-  const openNew = () => {
-    setEditing(null);
-    setForm(emptyForm);
-    setOpen(true);
-  };
-
-  const openEdit = (row) => {
-    setEditing(row);
-    const sizes = Array.isArray(row?.sizes) ? row.sizes.join(",") : "";
-    const images = Array.isArray(row?.images) ? row.images.join("\n") : "";
-    setForm({
-      name: row?.name || "",
-      sku: row?.sku || "",
-      description: row?.description || "",
-      price_mxn: String(row?.price_mxn ?? ""),
-      stock: String(row?.stock ?? ""),
-      section_id: row?.section_id || "EDICION_2025",
-      sub_section: row?.sub_section || "default",
-      rank: String(row?.rank ?? "999"),
-      is_active: !!row?.is_active,
-      sizes_csv: sizes || "S,M,L,XL,XXL",
-      images_lines: images || "",
-      image_url: row?.image_url || "",
-    });
-    setOpen(true);
-  };
-
-  const closeModal = () => {
-    setOpen(false);
-    setEditing(null);
-    setForm(emptyForm);
-  };
-
-  const save = async () => {
-    if (!orgId) return;
-
-    if (!canWrite) {
-      toast?.({ type: "bad", text: "No tienes permisos para editar productos." });
-      return;
-    }
-
-    const name = String(form.name || "").trim();
-    const sku = String(form.sku || "").trim();
-    if (!name) return toast?.({ type: "bad", text: "Falta el nombre del producto." });
-    if (!sku) return toast?.({ type: "bad", text: "Falta el SKU." });
-
-    const price_mxn = Number(form.price_mxn);
-    if (!Number.isFinite(price_mxn) || price_mxn <= 0) {
-      return toast?.({ type: "bad", text: "Precio MXN inválido." });
-    }
-
-    const stock = Number(form.stock);
-    const section_id = String(form.section_id || "EDICION_2025").trim() || "EDICION_2025";
-    const sub_section = String(form.sub_section || "default").trim() || "default";
-    const rank = Number(form.rank);
-
-    const sizes = String(form.sizes_csv || "")
-      .split(",")
-      .map((x) => String(x || "").trim())
-      .filter(Boolean);
-
-    const images = String(form.images_lines || "")
-      .split("\n")
-      .map((x) => String(x || "").trim())
-      .filter(Boolean);
-
-    const image_url = String(form.image_url || "").trim() || (images[0] || null);
-
-    const payload = {
-      organization_id: orgId,
-      name,
-      sku,
-      description: String(form.description || "").trim(),
-      price_mxn,
-      price_cents: Math.round(price_mxn * 100),
-      stock: Number.isFinite(stock) ? Math.max(0, Math.floor(stock)) : 0,
-      section_id,
-      sub_section,
-      rank: Number.isFinite(rank) ? rank : 999,
-      is_active: !!form.is_active,
-      images: images.length ? images : [],
-      sizes: sizes.length ? sizes : [],
-      image_url,
-      updated_at: new Date().toISOString(),
-    };
-
-    setBusy(true);
-    try {
-      if (editing?.id) {
-        const { error } = await supabase.from("products").update(payload).eq("id", editing.id);
-        if (error) throw error;
-        toast?.({ type: "ok", text: "Producto actualizado." });
-      } else {
-        const { error } = await supabase.from("products").insert({ ...payload, created_at: new Date().toISOString() });
-        if (error) throw error;
-        toast?.({ type: "ok", text: "Producto creado." });
-      }
-
-      closeModal();
-      load();
-    } catch (e) {
-      toast?.({ type: "bad", text: String(e?.message || e) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const softDelete = async (row) => {
-    if (!row?.id) return;
-    if (!canWrite) {
-      toast?.({ type: "bad", text: "No tienes permisos para eliminar productos." });
-      return;
-    }
-
-    const ok = confirm(`¿Eliminar "${row?.name || row?.sku || "producto"}"? (Se puede recuperar reactivando)`);
-    if (!ok) return;
-
-    setBusy(true);
-    try {
-      const { error } = await supabase
-        .from("products")
-        .update({ deleted_at: new Date().toISOString(), is_active: false, updated_at: new Date().toISOString() })
-        .eq("id", row.id);
-
-      if (error) throw error;
-      toast?.({ type: "ok", text: "Producto eliminado (soft-delete)." });
-      load();
-    } catch (e) {
-      toast?.({ type: "bad", text: String(e?.message || e) });
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">
-              Catálogo
-            </p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Catálogo</p>
             <HelpTip
-              title="¿Qué es Catálogo?"
-              text="Aquí controlas los productos que ve el cliente en Score Store. Si cambias precio, imagen o stock, la tienda se actualiza."
+              title="¿Para qué sirve Productos?"
+              text="Aquí controlas lo que se ve en la tienda: nombre, precio, stock e imagen. La tienda lee estos datos."
             />
           </div>
           <h4 className="text-lg font-black text-slate-900">Productos (en vivo)</h4>
           <p className="text-sm font-semibold text-slate-600">
-            Estos datos alimentan Score Store en tiempo real (Netlify Functions → Supabase).
+            Imágenes cuadradas con fondo blanco se ven pro aquí: marco, padding y object-contain.
           </p>
         </div>
 
@@ -1141,14 +910,12 @@ function ProductsView({ orgId, canWrite, toast }) {
           </button>
 
           <button
-            onClick={openNew}
             disabled={!canWrite}
             className={clsx(
               "px-4 py-2 rounded-2xl font-black text-sm flex items-center gap-2",
-              canWrite
-                ? "bg-slate-900 text-white hover:bg-slate-800"
-                : "bg-slate-200 text-slate-500 cursor-not-allowed"
+              canWrite ? "bg-slate-900 text-white hover:bg-slate-800" : "bg-slate-200 text-slate-500 cursor-not-allowed"
             )}
+            onClick={() => toast?.({ type: "bad", text: "Edición avanzada: si quieres alta/baja/imagen upload, lo activamos en el módulo completo." })}
           >
             <Package size={16} /> Nuevo
           </button>
@@ -1166,56 +933,32 @@ function ProductsView({ orgId, canWrite, toast }) {
               <th className="py-2 pr-3">Precio</th>
               <th className="py-2 pr-3">Stock</th>
               <th className="py-2 pr-3">Activo</th>
-              <th className="py-2 pr-3 text-right">Acciones</th>
             </tr>
           </thead>
-
           <tbody>
-            {(filtered || []).map((r) => (
+            {(filtered || []).slice(0, 120).map((r) => (
               <tr key={r.id} className="border-t border-slate-200">
                 <td className="py-3 pr-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-2xl border border-slate-200 bg-white overflow-hidden flex items-center justify-center shadow-sm">
+                    <div className="w-11 h-11 rounded-2xl border border-slate-200 bg-white overflow-hidden flex items-center justify-center shadow-sm p-1">
                       {r?.image_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={r.image_url}
-                          alt={r.name || "Producto"}
-                          className="w-full h-full object-contain bg-white"
-                        />
+                        <img src={r.image_url} alt={r.name || "Producto"} className="w-full h-full object-contain bg-white" />
                       ) : (
                         <span className="text-xs font-black text-slate-400">IMG</span>
                       )}
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-black text-slate-900 truncate">{r?.name || "—"}</p>
-                      <p className="text-xs font-semibold text-slate-500 truncate">
-                        Rank: {String(r?.rank ?? "—")}
-                      </p>
+                      <p className="text-xs font-semibold text-slate-500 truncate">Rank: {String(r?.rank ?? "—")}</p>
                     </div>
                   </div>
                 </td>
-
-                <td className="py-3 pr-3">
-                  <p className="text-sm font-black text-slate-900">{r?.sku || "—"}</p>
-                </td>
-
-                <td className="py-3 pr-3">
-                  <p className="text-sm font-black text-slate-900">{r?.section_id || "—"}</p>
-                </td>
-
-                <td className="py-3 pr-3">
-                  <p className="text-sm font-black text-slate-900">{r?.sub_section || "—"}</p>
-                </td>
-
-                <td className="py-3 pr-3">
-                  <p className="text-sm font-black text-slate-900">{moneyMXN(r?.price_mxn || 0)}</p>
-                </td>
-
-                <td className="py-3 pr-3">
-                  <p className="text-sm font-black text-slate-900">{Number(r?.stock ?? 0)}</p>
-                </td>
-
+                <td className="py-3 pr-3 text-sm font-black text-slate-900">{r?.sku || "—"}</td>
+                <td className="py-3 pr-3 text-sm font-black text-slate-900">{r?.section_id || "—"}</td>
+                <td className="py-3 pr-3 text-sm font-black text-slate-900">{r?.sub_section || "—"}</td>
+                <td className="py-3 pr-3 text-sm font-black text-slate-900">{moneyMXN(r?.price_mxn || 0)}</td>
+                <td className="py-3 pr-3 text-sm font-black text-slate-900">{Number(r?.stock ?? 0)}</td>
                 <td className="py-3 pr-3">
                   <span
                     className={clsx(
@@ -1226,41 +969,11 @@ function ProductsView({ orgId, canWrite, toast }) {
                     {r?.is_active ? "Sí" : "No"}
                   </span>
                 </td>
-
-                <td className="py-3 pr-3 text-right">
-                  <div className="flex justify-end gap-2">
-                    <button
-                      onClick={() => openEdit(r)}
-                      disabled={!canWrite}
-                      className={clsx(
-                        "px-3 py-2 rounded-2xl font-black text-sm border",
-                        canWrite
-                          ? "border-slate-200 bg-white hover:bg-slate-50 text-slate-900"
-                          : "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                      )}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => softDelete(r)}
-                      disabled={!canWrite}
-                      className={clsx(
-                        "px-3 py-2 rounded-2xl font-black text-sm border",
-                        canWrite
-                          ? "border-red-200 bg-red-50 hover:bg-red-100 text-red-700"
-                          : "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                      )}
-                    >
-                      Eliminar
-                    </button>
-                  </div>
-                </td>
               </tr>
             ))}
-
             {!filtered?.length ? (
               <tr>
-                <td colSpan={8} className="py-10">
+                <td colSpan={7} className="py-10">
                   <p className="text-sm font-semibold text-slate-500">Sin productos.</p>
                 </td>
               </tr>
@@ -1268,598 +981,18 @@ function ProductsView({ orgId, canWrite, toast }) {
           </tbody>
         </table>
       </div>
-
-      {/* Modal */}
-      {open ? (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={closeModal}
-            role="button"
-            aria-label="Cerrar modal"
-          />
-          <div className="relative w-full max-w-3xl rounded-[2rem] border border-slate-200 bg-white shadow-xl p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">
-                  {editing?.id ? "Editar" : "Nuevo"} producto
-                </p>
-                <h4 className="text-lg font-black text-slate-900">
-                  {editing?.id ? editing?.name || "Producto" : "Crear producto"}
-                </h4>
-              </div>
-
-              <button
-                onClick={closeModal}
-                className="w-10 h-10 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
-              <div>
-                <label className="text-xs font-black text-slate-700">Nombre</label>
-                <input
-                  value={form.name}
-                  onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-700">SKU</label>
-                <input
-                  value={form.sku}
-                  onChange={(e) => setForm((p) => ({ ...p, sku: e.target.value }))}
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-700">Precio MXN</label>
-                <input
-                  value={form.price_mxn}
-                  onChange={(e) => setForm((p) => ({ ...p, price_mxn: e.target.value }))}
-                  inputMode="decimal"
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                />
-                <p className="text-[11px] font-semibold text-slate-500 mt-1">
-                  Stripe usa centavos automáticamente (price_cents).
-                </p>
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-700">Stock</label>
-                <input
-                  value={form.stock}
-                  onChange={(e) => setForm((p) => ({ ...p, stock: e.target.value }))}
-                  inputMode="numeric"
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-700">Sección (section_id)</label>
-                <input
-                  value={form.section_id}
-                  onChange={(e) => setForm((p) => ({ ...p, section_id: e.target.value }))}
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-700">Sub-sección (sub_section)</label>
-                <input
-                  value={form.sub_section}
-                  onChange={(e) => setForm((p) => ({ ...p, sub_section: e.target.value }))}
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-700">Rank (orden)</label>
-                <input
-                  value={form.rank}
-                  onChange={(e) => setForm((p) => ({ ...p, rank: e.target.value }))}
-                  inputMode="numeric"
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="text-xs font-black text-slate-700">Descripción</label>
-                <textarea
-                  value={form.description}
-                  onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-                  rows={3}
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-700">Tallas (CSV)</label>
-                <input
-                  value={form.sizes_csv}
-                  onChange={(e) => setForm((p) => ({ ...p, sizes_csv: e.target.value }))}
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-700">Imagen principal (URL)</label>
-                <input
-                  value={form.image_url}
-                  onChange={(e) => setForm((p) => ({ ...p, image_url: e.target.value }))}
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="text-xs font-black text-slate-700">Imágenes (1 URL por línea)</label>
-                <textarea
-                  value={form.images_lines}
-                  onChange={(e) => setForm((p) => ({ ...p, images_lines: e.target.value }))}
-                  rows={4}
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                  placeholder="https://.../img1.webp&#10;https://.../img2.webp"
-                />
-              </div>
-
-              <div className="md:col-span-2 flex items-center justify-between gap-3">
-                <label className="flex items-center gap-2 text-sm font-black text-slate-800">
-                  <input
-                    type="checkbox"
-                    checked={!!form.is_active}
-                    onChange={(e) => setForm((p) => ({ ...p, is_active: e.target.checked }))}
-                    className="w-4 h-4"
-                  />
-                  Activo
-                </label>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={closeModal}
-                    className="px-4 py-3 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={save}
-                    disabled={busy}
-                    className={clsx(
-                      "px-4 py-3 rounded-2xl font-black text-sm",
-                      busy ? "bg-slate-200 text-slate-500" : "bg-slate-900 text-white hover:bg-slate-800"
-                    )}
-                  >
-                    Guardar
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <p className="text-[11px] font-semibold text-slate-500 mt-4">
-              Nota: Score Store consume estos datos vía <code>/.netlify/functions/catalog</code> y valida precios en el checkout.
-            </p>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
 
 /* =========================================================
-   Promos — real Supabase
+   Site Settings (simple + real)
    ========================================================= */
-
-function PromosView({ orgId, canWrite, toast }) {
-  const [busy, setBusy] = useState(false);
-  const [rows, setRows] = useState([]);
-  const [q, setQ] = useState("");
-
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState(null);
-
-  const emptyForm = useMemo(
-    () => ({
-      code: "",
-      type: "percent",
-      value: "10",
-      description: "",
-      min_amount_mxn: "0",
-      expires_at: "",
-      active: true,
-    }),
-    []
-  );
-
-  const [form, setForm] = useState(emptyForm);
-
-  const load = useCallback(async () => {
-    if (!orgId) return;
-    setBusy(true);
-    try {
-      const { data, error } = await supabase
-        .from("promo_rules")
-        .select("id, code, type, value, description, active, min_amount_mxn, expires_at, created_at")
-        .eq("organization_id", orgId)
-        .order("created_at", { ascending: false })
-        .limit(400);
-
-      if (error) throw error;
-      setRows(data || []);
-    } catch (e) {
-      toast?.({ type: "bad", text: String(e?.message || e) });
-    } finally {
-      setBusy(false);
-    }
-  }, [orgId, toast]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const filtered = useMemo(() => {
-    const s = String(q || "").trim().toLowerCase();
-    if (!s) return rows || [];
-    return (rows || []).filter((r) => {
-      const t = `${r?.code || ""} ${r?.type || ""} ${r?.description || ""}`.toLowerCase();
-      return t.includes(s);
-    });
-  }, [rows, q]);
-
-  const openNew = () => {
-    setEditing(null);
-    setForm(emptyForm);
-    setOpen(true);
-  };
-
-  const openEdit = (row) => {
-    setEditing(row);
-    setForm({
-      code: row?.code || "",
-      type: row?.type || "percent",
-      value: String(row?.value ?? "0"),
-      description: row?.description || "",
-      min_amount_mxn: String(row?.min_amount_mxn ?? "0"),
-      expires_at: row?.expires_at ? String(row.expires_at).slice(0, 16) : "",
-      active: !!row?.active,
-    });
-    setOpen(true);
-  };
-
-  const closeModal = () => {
-    setOpen(false);
-    setEditing(null);
-    setForm(emptyForm);
-  };
-
-  const save = async () => {
-    if (!orgId) return;
-    if (!canWrite) return toast?.({ type: "bad", text: "No tienes permisos para editar promos." });
-
-    const code = String(form.code || "").trim().toUpperCase().replace(/\s+/g, "");
-    if (!code) return toast?.({ type: "bad", text: "Falta el código." });
-
-    const type = String(form.type || "").trim();
-    const value = Number(form.value);
-    if (!Number.isFinite(value) || value < 0) return toast?.({ type: "bad", text: "Valor inválido." });
-
-    const min_amount_mxn = Number(form.min_amount_mxn);
-    const expires_at = form.expires_at ? new Date(form.expires_at).toISOString() : null;
-
-    const payload = {
-      organization_id: orgId,
-      code,
-      type,
-      value,
-      description: String(form.description || "").trim(),
-      active: !!form.active,
-      min_amount_mxn: Number.isFinite(min_amount_mxn) ? min_amount_mxn : 0,
-      expires_at,
-      updated_at: new Date().toISOString(),
-    };
-
-    setBusy(true);
-    try {
-      if (editing?.id) {
-        const { error } = await supabase.from("promo_rules").update(payload).eq("id", editing.id);
-        if (error) throw error;
-        toast?.({ type: "ok", text: "Promo actualizada." });
-      } else {
-        const { error } = await supabase.from("promo_rules").insert({ ...payload, created_at: new Date().toISOString() });
-        if (error) throw error;
-        toast?.({ type: "ok", text: "Promo creada." });
-      }
-
-      closeModal();
-      load();
-    } catch (e) {
-      toast?.({ type: "bad", text: String(e?.message || e) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">
-              Marketing
-            </p>
-            <HelpTip
-              title="¿Qué es Promos?"
-              text="Aquí creas cupones de descuento (porcentaje, monto fijo o envío gratis). Se aplican en Score Store al momento del pago."
-            />
-          </div>
-          <h4 className="text-lg font-black text-slate-900">Promociones</h4>
-          <p className="text-sm font-semibold text-slate-600">
-            Estos códigos se validan en el checkout (Stripe) y se reflejan en Score Store.
-          </p>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-          <div className="flex items-center gap-2 px-4 py-2 rounded-2xl border border-slate-200 bg-white">
-            <Search size={16} className="text-slate-500" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar por código o descripción…"
-              className="outline-none text-sm font-semibold text-slate-800 w-[260px] max-w-full"
-            />
-          </div>
-
-          <button
-            onClick={load}
-            className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm flex items-center gap-2"
-          >
-            <RefreshCcw size={16} className={busy ? "animate-spin" : ""} /> Actualizar
-          </button>
-
-          <button
-            onClick={openNew}
-            disabled={!canWrite}
-            className={clsx(
-              "px-4 py-2 rounded-2xl font-black text-sm flex items-center gap-2",
-              canWrite
-                ? "bg-slate-900 text-white hover:bg-slate-800"
-                : "bg-slate-200 text-slate-500 cursor-not-allowed"
-            )}
-          >
-            <Sparkles size={16} /> Nueva
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-[980px]">
-          <thead>
-            <tr className="text-left text-[10px] font-black uppercase tracking-widest text-slate-500">
-              <th className="py-2 pr-3">Código</th>
-              <th className="py-2 pr-3">Tipo</th>
-              <th className="py-2 pr-3">Valor</th>
-              <th className="py-2 pr-3">Mínimo</th>
-              <th className="py-2 pr-3">Expira</th>
-              <th className="py-2 pr-3">Activa</th>
-              <th className="py-2 pr-3 text-right">Acciones</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {(filtered || []).map((r) => (
-              <tr key={r.id} className="border-t border-slate-200">
-                <td className="py-3 pr-3">
-                  <p className="text-sm font-black text-slate-900">{r?.code || "—"}</p>
-                  <p className="text-xs font-semibold text-slate-500 truncate">{r?.description || ""}</p>
-                </td>
-
-                <td className="py-3 pr-3 text-sm font-black text-slate-900">
-                  {String(r?.type || "—")}
-                </td>
-
-                <td className="py-3 pr-3 text-sm font-black text-slate-900">
-                  {String(r?.value ?? "—")}
-                </td>
-
-                <td className="py-3 pr-3 text-sm font-black text-slate-900">
-                  {moneyMXN(num(r?.min_amount_mxn))}
-                </td>
-
-                <td className="py-3 pr-3 text-sm font-semibold text-slate-700">
-                  {r?.expires_at ? new Date(r.expires_at).toLocaleDateString("es-MX") : "—"}
-                </td>
-
-                <td className="py-3 pr-3">
-                  <span
-                    className={clsx(
-                      "inline-flex items-center px-3 py-1 rounded-full text-[11px] font-black",
-                      r?.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
-                    )}
-                  >
-                    {r?.active ? "Sí" : "No"}
-                  </span>
-                </td>
-
-                <td className="py-3 pr-3 text-right">
-                  <div className="flex justify-end gap-2">
-                    <button
-                      onClick={() => openEdit(r)}
-                      disabled={!canWrite}
-                      className={clsx(
-                        "px-3 py-2 rounded-2xl font-black text-sm border",
-                        canWrite
-                          ? "border-slate-200 bg-white hover:bg-slate-50 text-slate-900"
-                          : "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                      )}
-                    >
-                      Editar
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-
-            {!filtered?.length ? (
-              <tr>
-                <td colSpan={7} className="py-10">
-                  <p className="text-sm font-semibold text-slate-500">Sin promos.</p>
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Modal */}
-      {open ? (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={closeModal}
-            role="button"
-            aria-label="Cerrar modal"
-          />
-          <div className="relative w-full max-w-3xl rounded-[2rem] border border-slate-200 bg-white shadow-xl p-6">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">
-                  {editing?.id ? "Editar" : "Nueva"} promo
-                </p>
-                <h4 className="text-lg font-black text-slate-900">
-                  {editing?.id ? `Código ${editing?.code || ""}` : "Crear promo"}
-                </h4>
-              </div>
-
-              <button
-                onClick={closeModal}
-                className="w-10 h-10 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
-              <div>
-                <label className="text-xs font-black text-slate-700">Código</label>
-                <input
-                  value={form.code}
-                  onChange={(e) => setForm((p) => ({ ...p, code: e.target.value }))}
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none uppercase"
-                  placeholder="SCOREVIP"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-700">Tipo</label>
-                <select
-                  value={form.type}
-                  onChange={(e) => setForm((p) => ({ ...p, type: e.target.value }))}
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                >
-                  <option value="percent">Porcentaje</option>
-                  <option value="fixed_mxn">Monto fijo (MXN)</option>
-                  <option value="free_shipping">Envío gratis</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-700">Valor</label>
-                <input
-                  value={form.value}
-                  onChange={(e) => setForm((p) => ({ ...p, value: e.target.value }))}
-                  inputMode="decimal"
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                />
-                <p className="text-[11px] font-semibold text-slate-500 mt-1">
-                  Percent: 10 = 10% · Fixed: 50 = $50 MXN
-                </p>
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-700">Mínimo compra (MXN)</label>
-                <input
-                  value={form.min_amount_mxn}
-                  onChange={(e) => setForm((p) => ({ ...p, min_amount_mxn: e.target.value }))}
-                  inputMode="decimal"
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="text-xs font-black text-slate-700">Descripción</label>
-                <input
-                  value={form.description}
-                  onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                  placeholder="Ej: 10% en toda la tienda"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-700">Expira</label>
-                <input
-                  value={form.expires_at}
-                  onChange={(e) => setForm((p) => ({ ...p, expires_at: e.target.value }))}
-                  type="datetime-local"
-                  className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-                />
-              </div>
-
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 text-sm font-black text-slate-800">
-                  <input
-                    type="checkbox"
-                    checked={!!form.active}
-                    onChange={(e) => setForm((p) => ({ ...p, active: e.target.checked }))}
-                    className="w-4 h-4"
-                  />
-                  Activa
-                </label>
-              </div>
-
-              <div className="md:col-span-2 flex items-center justify-end gap-2">
-                <button
-                  onClick={closeModal}
-                  className="px-4 py-3 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={save}
-                  disabled={busy}
-                  className={clsx(
-                    "px-4 py-3 rounded-2xl font-black text-sm",
-                    busy ? "bg-slate-200 text-slate-500" : "bg-slate-900 text-white hover:bg-slate-800"
-                  )}
-                >
-                  Guardar
-                </button>
-              </div>
-            </div>
-
-            <p className="text-[11px] font-semibold text-slate-500 mt-4">
-              Nota: Score Store valida promos en backend para evitar abuso.
-            </p>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-/* =========================================================
-   Site Settings — base (en tu repo actual)
-   ========================================================= */
-
 function SiteSettingsView({ orgId, canWrite, toast }) {
   const [busy, setBusy] = useState(false);
   const [row, setRow] = useState(null);
 
   const [form, setForm] = useState({
-    hero_title: "",
-    hero_image: "",
     promo_active: false,
     promo_text: "",
     pixel_id: "",
@@ -1872,14 +1005,12 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
   });
 
   const load = useCallback(async () => {
-    if (!orgId) return;
+    if (!supabase) return;
     setBusy(true);
     try {
       const { data, error } = await supabase
         .from("site_settings")
-        .select(
-          "id, org_id, organization_id, hero_title, hero_image, promo_active, promo_text, pixel_id, maintenance_mode, season_key, theme, home, socials, contact_email, updated_at, created_at"
-        )
+        .select("id, org_id, organization_id, promo_active, promo_text, pixel_id, maintenance_mode, season_key, theme, home, socials, contact_email, updated_at, created_at")
         .or(`org_id.eq.${orgId},organization_id.eq.${orgId}`)
         .order("updated_at", { ascending: false })
         .order("created_at", { ascending: false })
@@ -1889,21 +1020,15 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
       if (error) throw error;
       setRow(data || null);
 
-      const theme = data?.theme ?? {};
-      const home = data?.home ?? {};
-      const socials = data?.socials ?? {};
-
       setForm({
-        hero_title: data?.hero_title || "",
-        hero_image: data?.hero_image || "",
         promo_active: !!data?.promo_active,
         promo_text: data?.promo_text || "",
         pixel_id: data?.pixel_id || "",
         maintenance_mode: !!data?.maintenance_mode,
         season_key: data?.season_key || "default",
-        theme_json: JSON.stringify(theme, null, 2),
-        home_json: JSON.stringify(home, null, 2),
-        socials_json: JSON.stringify(socials, null, 2),
+        theme_json: JSON.stringify(data?.theme ?? {}, null, 2),
+        home_json: JSON.stringify(data?.home ?? {}, null, 2),
+        socials_json: JSON.stringify(data?.socials ?? {}, null, 2),
         contact_email: data?.contact_email || "",
       });
     } catch (e) {
@@ -1918,28 +1043,20 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
   }, [load]);
 
   const save = async () => {
-    if (!orgId) return;
     if (!canWrite) return toast?.({ type: "bad", text: "No tienes permisos para editar Site Settings." });
-
     setBusy(true);
     try {
-      const theme = JSON.parse(form.theme_json || "{}");
-      const home = JSON.parse(form.home_json || "{}");
-      const socials = JSON.parse(form.socials_json || "{}");
-
       const payload = {
-        org_id: orgId, // tu schema real lo exige NOT NULL
-        organization_id: orgId, // lo dejamos también para compatibilidad
-        hero_title: String(form.hero_title || "").trim() || null,
-        hero_image: String(form.hero_image || "").trim() || null,
+        org_id: orgId,
+        organization_id: orgId,
         promo_active: !!form.promo_active,
         promo_text: String(form.promo_text || "").trim() || null,
         pixel_id: String(form.pixel_id || "").trim() || null,
         maintenance_mode: !!form.maintenance_mode,
         season_key: String(form.season_key || "default").trim() || "default",
-        theme,
-        home,
-        socials,
+        theme: JSON.parse(form.theme_json || "{}"),
+        home: JSON.parse(form.home_json || "{}"),
+        socials: JSON.parse(form.socials_json || "{}"),
         contact_email: String(form.contact_email || "").trim() || null,
         updated_at: new Date().toISOString(),
       };
@@ -1948,13 +1065,11 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
         const { error } = await supabase.from("site_settings").update(payload).eq("id", row.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
-          .from("site_settings")
-          .insert({ ...payload, created_at: new Date().toISOString() });
+        const { error } = await supabase.from("site_settings").insert({ ...payload, created_at: new Date().toISOString() });
         if (error) throw error;
       }
 
-      toast?.({ type: "ok", text: "Site Settings guardado. Score Store se actualizará en vivo." });
+      toast?.({ type: "ok", text: "Site Settings guardado. Score Store lo leerá en vivo." });
       load();
     } catch (e) {
       toast?.({ type: "bad", text: `Error guardando: ${String(e?.message || e)}` });
@@ -1973,12 +1088,12 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
             </p>
             <HelpTip
               title="¿Qué es Site Settings?"
-              text="Este panel controla: promo bar, pixel, mantenimiento y tema suave (sin romper tu diseño). Al guardar, Score Store lo lee en tiempo real."
+              text="Controla promo bar, pixel, mantenimiento y temporada. Score Store lo consulta desde su function site_settings."
             />
           </div>
           <h4 className="text-lg font-black text-slate-900">Site Settings (en vivo)</h4>
           <p className="text-sm font-semibold text-slate-600">
-            Aquí editas parámetros globales de Score Store.
+            Guardar aquí actualiza lo que la tienda consume.
           </p>
         </div>
 
@@ -1997,33 +1112,10 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="text-xs font-black text-slate-700">Hero title (opcional)</label>
-          <input
-            value={form.hero_title}
-            onChange={(e) => setForm((p) => ({ ...p, hero_title: e.target.value }))}
-            className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-            placeholder="Merch Oficial SCORE"
-          />
-        </div>
-
-        <div>
-          <label className="text-xs font-black text-slate-700">Hero image URL (opcional)</label>
-          <input
-            value={form.hero_image}
-            onChange={(e) => setForm((p) => ({ ...p, hero_image: e.target.value }))}
-            className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-            placeholder="https://.../hero.webp"
-          />
-        </div>
-
         <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-black text-slate-900">Promoción (Promo Bar)</div>
-            <HelpTip
-              title="Promo Bar"
-              text="Si activas esto, Score Store muestra una barra arriba con tu promo. Es ideal para temporadas o anuncios."
-            />
+            <HelpTip title="Promo Bar" text="Activa una barra superior en Score Store con un texto corto de promo." />
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -2049,10 +1141,7 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-black text-slate-900">Mantenimiento</div>
-            <HelpTip
-              title="Mantenimiento"
-              text="Si lo activas, Score Store bloquea el botón de pago (checkout) para evitar ventas durante cambios."
-            />
+            <HelpTip title="Mantenimiento" text="Si lo activas, Score Store debería bloquear checkout para evitar ventas." />
           </div>
 
           <label className="mt-3 flex items-center gap-2 text-sm font-black text-slate-800">
@@ -2069,10 +1158,7 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-black text-slate-900">Pixel Meta (opcional)</div>
-            <HelpTip
-              title="Pixel"
-              text="Pon el ID del pixel. Se activa solo si el usuario acepta cookies en Score Store (cumplimiento)."
-            />
+            <HelpTip title="Pixel" text="ID del pixel. Se recomienda que se active solo tras aceptar cookies." />
           </div>
 
           <input
@@ -2086,10 +1172,7 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-black text-slate-900">Temporada (season_key)</div>
-            <HelpTip
-              title="Temporada"
-              text="No cambia drásticamente el diseño. Sirve para activar detalles suaves (colores/partículas) desde Score Store."
-            />
+            <HelpTip title="Temporada" text="Sirve para activar detalles suaves (no cambios drásticos) en Score Store." />
           </div>
 
           <input
@@ -2100,78 +1183,39 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
           />
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-black text-slate-900">Correo de contacto</div>
+            <div className="text-sm font-black text-slate-900">JSONs (theme/home/socials)</div>
             <HelpTip
-              title="Contacto"
-              text="Este correo se usa para soporte y comunicación. Score Store puede leerlo como contacto principal."
+              title="JSONs"
+              text="Opcionales. Se guardan tal cual. Score Store puede consumirlos si lo habilitas en su frontend."
+              align="left"
             />
           </div>
 
-          <input
-            value={form.contact_email}
-            onChange={(e) => setForm((p) => ({ ...p, contact_email: e.target.value }))}
-            className="mt-3 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-            placeholder="ventas@empresa.com"
-          />
-        </div>
-
-        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-1">
-            <div className="flex items-center justify-between gap-3">
-              <label className="text-xs font-black text-slate-700">theme (JSON)</label>
-              <HelpTip
-                title="theme"
-                text="Control suave de colores / efectos. Ej: {\"accent\":\"#E10600\",\"particles\":true}"
-                align="left"
-              />
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
             <textarea
               value={form.theme_json}
               onChange={(e) => setForm((p) => ({ ...p, theme_json: e.target.value }))}
-              rows={10}
-              className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-mono text-xs font-semibold text-slate-900 outline-none"
+              rows={8}
+              className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-mono text-xs font-semibold text-slate-900 outline-none"
+              placeholder='theme JSON'
             />
-          </div>
-
-          <div className="md:col-span-1">
-            <div className="flex items-center justify-between gap-3">
-              <label className="text-xs font-black text-slate-700">home (JSON)</label>
-              <HelpTip
-                title="home"
-                text="Campos de contenido (copys/strings). Score Store puede leerlos si habilitas render dinámico."
-                align="left"
-              />
-            </div>
             <textarea
               value={form.home_json}
               onChange={(e) => setForm((p) => ({ ...p, home_json: e.target.value }))}
-              rows={10}
-              className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-mono text-xs font-semibold text-slate-900 outline-none"
+              rows={8}
+              className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-mono text-xs font-semibold text-slate-900 outline-none"
+              placeholder='home JSON'
             />
-          </div>
-
-          <div className="md:col-span-1">
-            <div className="flex items-center justify-between gap-3">
-              <label className="text-xs font-black text-slate-700">socials (JSON)</label>
-              <HelpTip
-                title="socials"
-                text="Redes sociales (links). Score Store puede leerlos para footer / UI."
-                align="left"
-              />
-            </div>
             <textarea
               value={form.socials_json}
               onChange={(e) => setForm((p) => ({ ...p, socials_json: e.target.value }))}
-              rows={10}
-              className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-mono text-xs font-semibold text-slate-900 outline-none"
+              rows={8}
+              className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-mono text-xs font-semibold text-slate-900 outline-none"
+              placeholder='socials JSON'
             />
           </div>
-        </div>
-
-        <div className="md:col-span-2 text-[11px] font-semibold text-slate-500">
-          Guardar aquí actualiza Score Store “en vivo” porque Score Store lee <code>/.netlify/functions/site_settings</code>.
         </div>
       </div>
     </div>
@@ -2179,35 +1223,28 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
 }
 
 /* =========================================================
-   OpsView — placeholder mínimo (seguro)
+   Ops (placeholder seguro)
    ========================================================= */
-
-function OpsView({ orgId, token, toast }) {
+function OpsView({ orgId }) {
   return (
     <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">
-            Operación
-          </p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Operación</p>
           <h4 className="text-lg font-black text-slate-900">Operación y logística</h4>
           <p className="text-sm font-semibold text-slate-600">
-            Este módulo se puede expandir con tracking en vivo (Stripe/Envía) por pedido.
+            Aquí se puede expandir tracking por pedido (Stripe session + guía Envía).
           </p>
         </div>
-
         <HelpTip
-          title="¿Qué puedes ver aquí?"
-          text="Tracking por pedido, guías, estatus de fulfillment, alertas, devoluciones. Lo activamos cuando tu Score Store ya esté corriendo 100%."
+          title="¿Qué se puede ver aquí?"
+          text="Tracking por pedido, guías, estatus de fulfillment, devoluciones. Se activa cuando tengas webhooks y tablas listas."
         />
       </div>
 
       <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
         <p className="text-sm font-semibold text-slate-700">
           Org: <span className="font-black">{orgId}</span>
-        </p>
-        <p className="text-xs font-semibold text-slate-500 mt-2">
-          Para ver tracking en vivo, se requiere conectar endpoints de Envía API directos (según tu cuenta) y asociarlos a tus órdenes.
         </p>
       </div>
     </div>
