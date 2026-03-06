@@ -3,11 +3,12 @@
 /**
  * =========================================================
  * UnicOs — Admin App (Score Store + Único Uniformes)
- * page.js — FULL FILE (Aligned to repo helpers + real dashboards)
+ * page.js — FULL FILE (ZIP ACTUAL / corregido real)
  *
- * - Stripe dashboard real: /api/stripe/summary (AUTH real)
- * - Envía ops-real dashboard: /api/envia/summary (AUTH real, from shipping_labels.raw)
- * - KPI "Ganancia": muestra SOLO 70% del neto real (política interna, sin decirlo en UI)
+ * - Corrige dependencia real de /api/me
+ * - Corrige flujo real de Stripe fees (POST + stripe_session_ids)
+ * - Dashboard real: Stripe + Envía
+ * - KPI "Ganancia": muestra SOLO 70% del neto real
  * - Help tips (❓) para dueños no-tech
  * =========================================================
  */
@@ -27,7 +28,6 @@ import {
   Search,
   Settings,
   Shield,
-  ShoppingCart,
   Sparkles,
   Truck,
   Wallet,
@@ -38,7 +38,7 @@ import {
 import { createClient } from "@supabase/supabase-js";
 
 /* =========================================================
-   Supabase client (browser) — aligned to typical UnicOs setup
+   Supabase client (browser)
    ========================================================= */
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
@@ -173,22 +173,23 @@ function Toast({ toast, clear }) {
 }
 
 /* =========================================================
-   Roles (frontend gating)
+   Roles frontend
    ========================================================= */
 const ROLE_PERMS = {
-  owner: { view_finance: true, write: true, marketing: true },
-  admin: { view_finance: true, write: true, marketing: true },
-  marketing: { view_finance: true, write: false, marketing: true },
-  support: { view_finance: false, write: false, marketing: false },
-  viewer: { view_finance: false, write: false, marketing: false },
+  owner: { view_finance: true, write: true },
+  admin: { view_finance: true, write: true },
+  marketing: { view_finance: true, write: false },
+  support: { view_finance: false, write: false },
+  viewer: { view_finance: false, write: false },
 };
 
 const hasPermLocal = (role, key) => {
   const r = String(role || "viewer");
   return !!ROLE_PERMS[r]?.[key];
 };
+
 /* =========================================================
-   App Shell
+   App shell
    ========================================================= */
 export default function Page() {
   const [toast, setToast] = useState(null);
@@ -284,7 +285,6 @@ function AppRoot({ toast }) {
         }
       })();
 
-      // Identidad real via tu API interna (/api/me) — patrón típico de UnicOs
       const whoRes = await fetch("/api/me", {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -298,10 +298,9 @@ function AppRoot({ toast }) {
       if (!targetOrg && who?.organization_id) targetOrg = String(who.organization_id);
 
       if (!targetOrg) {
-        // fallback: por email
         const { data: rows, error } = await supabase
           .from("admin_users")
-          .select("organization_id, role, is_active, email")
+          .select("organization_id, org_id, role, is_active, email")
           .eq("is_active", true)
           .ilike("email", email)
           .order("created_at", { ascending: true })
@@ -309,8 +308,8 @@ function AppRoot({ toast }) {
 
         if (error) throw error;
         const row = rows?.[0];
-        if (!row?.organization_id) throw new Error("No hay organización asociada a este usuario.");
-        targetOrg = row.organization_id;
+        targetOrg = row?.organization_id || row?.org_id || "";
+        if (!targetOrg) throw new Error("No hay organización asociada a este usuario.");
       }
 
       setOrgId(targetOrg);
@@ -318,16 +317,33 @@ function AppRoot({ toast }) {
         localStorage.setItem("unicos_org_id", targetOrg);
       } catch {}
 
-      const { data: adminRow, error: adminErr } = await supabase
+      let adminRow = null;
+
+      const q1 = await supabase
         .from("admin_users")
-        .select("id, role, is_active, email, user_id, organization_id")
+        .select("id, role, is_active, email, user_id, organization_id, org_id")
         .eq("organization_id", targetOrg)
         .eq("is_active", true)
         .or(`email.ilike.${email},user_id.eq.${who.id}`)
         .limit(1)
         .maybeSingle();
 
-      if (adminErr || !adminRow) throw new Error("No autorizado para este org.");
+      if (!q1.error && q1.data) adminRow = q1.data;
+
+      if (!adminRow) {
+        const q2 = await supabase
+          .from("admin_users")
+          .select("id, role, is_active, email, user_id, organization_id, org_id")
+          .eq("org_id", targetOrg)
+          .eq("is_active", true)
+          .or(`email.ilike.${email},user_id.eq.${who.id}`)
+          .limit(1)
+          .maybeSingle();
+
+        if (!q2.error && q2.data) adminRow = q2.data;
+      }
+
+      if (!adminRow) throw new Error("No autorizado para este org.");
       setAdmin(adminRow);
 
       const { data: org, error: orgErr } = await supabase
@@ -402,7 +418,6 @@ function AppRoot({ toast }) {
   return (
     <div className="space-y-6">
       <HeaderBar orgName={orgName} role={admin.role} email={sessionEmail} onLogout={logout} />
-
       <NavTabs tab={tab} setTab={setTab} canWrite={canWrite} canFinance={canFinance} />
 
       {tab === "dashboard" ? <DashboardView orgId={orgId} token={token} toast={toast} /> : null}
@@ -412,6 +427,7 @@ function AppRoot({ toast }) {
     </div>
   );
 }
+
 function HeaderBar({ orgName, role, email, onLogout }) {
   return (
     <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
@@ -477,16 +493,14 @@ function LoginScreen({ token, setToken, email, setEmail, onSave }) {
     <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">
-            Acceso
-          </p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Acceso</p>
           <h3 className="text-lg font-black text-slate-900">Iniciar sesión</h3>
           <p className="text-sm font-semibold text-slate-600 mt-1">Pega el token de acceso de UnicOs.</p>
         </div>
 
         <HelpTip
           title="¿Qué es el token?"
-          text="Es una llave temporal para acceder al panel. Si no lo tienes, pídeselo al admin técnico."
+          text="Es una llave temporal para acceder al panel. Sin token válido, UnicOs no puede leer datos reales."
         />
       </div>
 
@@ -554,10 +568,9 @@ function DashboardView({ orgId, token, toast }) {
 
     setBusy(true);
     try {
-      // 1) Ventas reales por orders (tu tienda)
       const { data: orders, error: ordersErr } = await supabase
         .from("orders")
-        .select("id, amount_total_mxn, status, created_at")
+        .select("id, amount_total_mxn, stripe_session_id, status, created_at")
         .eq("organization_id", orgId)
         .in("status", ["paid", "fulfilled"])
         .order("created_at", { ascending: false })
@@ -567,17 +580,27 @@ function DashboardView({ orgId, token, toast }) {
 
       const grossOrders = (orders || []).reduce((a, o) => a + num(o.amount_total_mxn), 0);
 
-      // 2) Stripe fees reales (tu endpoint ya existente en repo)
+      const stripeSessionIds = Array.from(
+        new Set((orders || []).map((o) => String(o?.stripe_session_id || "").trim()).filter(Boolean))
+      ).slice(0, 120);
+
       let stripeFee = 0;
       try {
-        const r = await fetch(`/api/stripe/fees?org_id=${encodeURIComponent(orgId)}`, {
-          headers: { Authorization: `Bearer ${token}` },
+        const r = await fetch(`/api/stripe/fees`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            org_id: orgId,
+            stripe_session_ids: stripeSessionIds,
+          }),
         });
         const j = await r.json().catch(() => ({}));
-        if (r.ok && j?.ok) stripeFee = num(j.fees_mxn);
+        if (r.ok && j?.ok) stripeFee = num(j.total_fee_mxn);
       } catch {}
 
-      // 3) Stripe summary real (balance/payouts/charges)
       let stripe = null;
       let refunds = 0;
       let disputes = 0;
@@ -590,10 +613,10 @@ function DashboardView({ orgId, token, toast }) {
           stripe = j;
           refunds = num(j?.kpi?.refunded_mxn);
           disputes = num(j?.kpi?.disputes);
+          if (!stripeFee) stripeFee = num(j?.kpi?.stripe_fee_mxn);
         }
       } catch {}
 
-      // 4) Envía summary real (operación: shipping_labels.raw)
       let envia = null;
       let enviaCost = 0;
       try {
@@ -607,10 +630,7 @@ function DashboardView({ orgId, token, toast }) {
         }
       } catch {}
 
-      // Neto real operativo
       const netReal = Math.max(0, grossOrders - stripeFee - enviaCost);
-
-      // ✅ REGLA EMPRESA: mostrar solo 70% como “total”
       const netShown = Math.max(0, netReal * 0.7);
 
       setState({
@@ -635,9 +655,9 @@ function DashboardView({ orgId, token, toast }) {
   useEffect(() => {
     load();
   }, [load]);
-return (
+
+  return (
     <div className="space-y-6">
-      {/* KPI principal */}
       <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -685,7 +705,7 @@ return (
             value={moneyMXN(state.stripe_fee_mxn)}
             icon={<CreditCard size={14} />}
             note="Fees reales"
-            helpText="Se toma de tu endpoint /api/stripe/fees (balance_transaction)."
+            helpText="Se toma del cálculo real por stripe_session_id y balance_transaction."
           />
           <MiniKPI
             label="Costo Envía"
@@ -704,7 +724,6 @@ return (
         </div>
       </div>
 
-      {/* Stripe Panel */}
       <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -768,7 +787,6 @@ return (
         </div>
       </div>
 
-      {/* Envía Panel */}
       <div className="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -823,8 +841,7 @@ return (
         </div>
 
         <p className="mt-4 text-[11px] font-semibold text-slate-500">
-          Si quieres el “clon exacto” del panel Envía (tracking live por guía), se agrega un endpoint directo a Envía API
-          usando tu token/tenant real. Esto ya es 100% real por operación (costos).
+          Si quieres el clon exacto del panel Envía (tracking live por guía), se agrega un endpoint directo a Envía API usando tu token/tenant real.
         </p>
       </div>
     </div>
@@ -832,7 +849,7 @@ return (
 }
 
 /* =========================================================
-   Products (simple list + edit) — usa tu tabla products
+   Products
    ========================================================= */
 function ProductsView({ orgId, canWrite, toast }) {
   const [busy, setBusy] = useState(false);
@@ -915,7 +932,12 @@ function ProductsView({ orgId, canWrite, toast }) {
               "px-4 py-2 rounded-2xl font-black text-sm flex items-center gap-2",
               canWrite ? "bg-slate-900 text-white hover:bg-slate-800" : "bg-slate-200 text-slate-500 cursor-not-allowed"
             )}
-            onClick={() => toast?.({ type: "bad", text: "Edición avanzada: si quieres alta/baja/imagen upload, lo activamos en el módulo completo." })}
+            onClick={() =>
+              toast?.({
+                type: "bad",
+                text: "Edición avanzada: si quieres alta/baja/upload desde este panel, te la cierro después de dejar Score Store listo.",
+              })
+            }
           >
             <Package size={16} /> Nuevo
           </button>
@@ -986,7 +1008,7 @@ function ProductsView({ orgId, canWrite, toast }) {
 }
 
 /* =========================================================
-   Site Settings (simple + real)
+   Site Settings
    ========================================================= */
 function SiteSettingsView({ orgId, canWrite, toast }) {
   const [busy, setBusy] = useState(false);
@@ -1092,9 +1114,7 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
             />
           </div>
           <h4 className="text-lg font-black text-slate-900">Site Settings (en vivo)</h4>
-          <p className="text-sm font-semibold text-slate-600">
-            Guardar aquí actualiza lo que la tienda consume.
-          </p>
+          <p className="text-sm font-semibold text-slate-600">Guardar aquí actualiza lo que la tienda consume.</p>
         </div>
 
         <button
@@ -1102,9 +1122,7 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
           disabled={!canWrite || busy}
           className={clsx(
             "px-4 py-2 rounded-2xl font-black text-sm inline-flex items-center gap-2",
-            canWrite && !busy
-              ? "bg-slate-900 text-white hover:bg-slate-800"
-              : "bg-slate-200 text-slate-500 cursor-not-allowed"
+            canWrite && !busy ? "bg-slate-900 text-white hover:bg-slate-800" : "bg-slate-200 text-slate-500 cursor-not-allowed"
           )}
         >
           <Check size={16} /> Guardar
@@ -1141,9 +1159,8 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-black text-slate-900">Mantenimiento</div>
-            <HelpTip title="Mantenimiento" text="Si lo activas, Score Store debería bloquear checkout para evitar ventas." />
+            <HelpTip title="Mantenimiento" text="Bloquea el checkout en Score Store." />
           </div>
-
           <label className="mt-3 flex items-center gap-2 text-sm font-black text-slate-800">
             <input
               type="checkbox"
@@ -1157,10 +1174,9 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
 
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-black text-slate-900">Pixel Meta (opcional)</div>
-            <HelpTip title="Pixel" text="ID del pixel. Se recomienda que se active solo tras aceptar cookies." />
+            <div className="text-sm font-black text-slate-900">Pixel Meta</div>
+            <HelpTip title="Pixel" text="ID del pixel para Score Store." />
           </div>
-
           <input
             value={form.pixel_id}
             onChange={(e) => setForm((p) => ({ ...p, pixel_id: e.target.value }))}
@@ -1169,53 +1185,54 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
           />
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-black text-slate-900">Temporada (season_key)</div>
-            <HelpTip title="Temporada" text="Sirve para activar detalles suaves (no cambios drásticos) en Score Store." />
-          </div>
-
+        <div>
+          <label className="text-xs font-black text-slate-700">Temporada (season_key)</label>
           <input
             value={form.season_key}
             onChange={(e) => setForm((p) => ({ ...p, season_key: e.target.value }))}
-            className="mt-3 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
-            placeholder="default | navidad | verano | ..."
+            className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
+            placeholder="default | navidad | verano"
           />
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-black text-slate-900">JSONs (theme/home/socials)</div>
-            <HelpTip
-              title="JSONs"
-              text="Opcionales. Se guardan tal cual. Score Store puede consumirlos si lo habilitas en su frontend."
-              align="left"
-            />
-          </div>
+        <div>
+          <label className="text-xs font-black text-slate-700">Correo de contacto</label>
+          <input
+            value={form.contact_email}
+            onChange={(e) => setForm((p) => ({ ...p, contact_email: e.target.value }))}
+            className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none"
+            placeholder="ventas@empresa.com"
+          />
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
-            <textarea
-              value={form.theme_json}
-              onChange={(e) => setForm((p) => ({ ...p, theme_json: e.target.value }))}
-              rows={8}
-              className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-mono text-xs font-semibold text-slate-900 outline-none"
-              placeholder='theme JSON'
-            />
-            <textarea
-              value={form.home_json}
-              onChange={(e) => setForm((p) => ({ ...p, home_json: e.target.value }))}
-              rows={8}
-              className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-mono text-xs font-semibold text-slate-900 outline-none"
-              placeholder='home JSON'
-            />
-            <textarea
-              value={form.socials_json}
-              onChange={(e) => setForm((p) => ({ ...p, socials_json: e.target.value }))}
-              rows={8}
-              className="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-mono text-xs font-semibold text-slate-900 outline-none"
-              placeholder='socials JSON'
-            />
-          </div>
+        <div>
+          <label className="text-xs font-black text-slate-700">theme (JSON)</label>
+          <textarea
+            value={form.theme_json}
+            onChange={(e) => setForm((p) => ({ ...p, theme_json: e.target.value }))}
+            rows={10}
+            className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-mono text-xs font-semibold text-slate-900 outline-none"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-black text-slate-700">home (JSON)</label>
+          <textarea
+            value={form.home_json}
+            onChange={(e) => setForm((p) => ({ ...p, home_json: e.target.value }))}
+            rows={10}
+            className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-mono text-xs font-semibold text-slate-900 outline-none"
+          />
+        </div>
+
+        <div className="md:col-span-2">
+          <label className="text-xs font-black text-slate-700">socials (JSON)</label>
+          <textarea
+            value={form.socials_json}
+            onChange={(e) => setForm((p) => ({ ...p, socials_json: e.target.value }))}
+            rows={8}
+            className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white font-mono text-xs font-semibold text-slate-900 outline-none"
+          />
         </div>
       </div>
     </div>
@@ -1223,7 +1240,7 @@ function SiteSettingsView({ orgId, canWrite, toast }) {
 }
 
 /* =========================================================
-   Ops (placeholder seguro)
+   Ops
    ========================================================= */
 function OpsView({ orgId }) {
   return (
@@ -1238,7 +1255,7 @@ function OpsView({ orgId }) {
         </div>
         <HelpTip
           title="¿Qué se puede ver aquí?"
-          text="Tracking por pedido, guías, estatus de fulfillment, devoluciones. Se activa cuando tengas webhooks y tablas listas."
+          text="Tracking por pedido, guías, estatus de fulfillment y devoluciones."
         />
       </div>
 
