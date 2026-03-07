@@ -32,29 +32,70 @@ export async function GET(req) {
     }
 
     const email = normEmail(user.email);
-    let organization_id = null;
-    let role = null;
 
-    const q1 = await sb
+    const { data: adminRows, error: adminErr } = await sb
       .from("admin_users")
-      .select("organization_id, org_id, role, is_active")
+      .select("id, organization_id, org_id, role, is_active, email, user_id, created_at")
       .eq("is_active", true)
       .or(`user_id.eq.${user.id},email.ilike.${email}`)
       .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .limit(50);
 
-    if (!q1.error && q1.data) {
-      organization_id = q1.data.organization_id || q1.data.org_id || null;
-      role = q1.data.role || null;
+    if (adminErr) {
+      return json({ ok: false, error: adminErr.message || "No se pudo cargar admin_users" }, 500);
     }
+
+    const rawMemberships = (adminRows || [])
+      .map((row) => {
+        const orgId = String(row?.organization_id || row?.org_id || "").trim();
+        if (!orgId) return null;
+        return {
+          admin_id: row.id || null,
+          organization_id: orgId,
+          role: String(row?.role || "").trim().toLowerCase() || null,
+          email: row?.email || "",
+          user_id: row?.user_id || null,
+          created_at: row?.created_at || null,
+        };
+      })
+      .filter(Boolean);
+
+    const seen = new Set();
+    const memberships = rawMemberships.filter((row) => {
+      const key = `${row.organization_id}::${row.role || ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    const orgIds = Array.from(new Set(memberships.map((m) => m.organization_id))).filter(Boolean);
+
+    let orgMap = new Map();
+    if (orgIds.length) {
+      const { data: orgRows } = await sb
+        .from("organizations")
+        .select("id,name")
+        .in("id", orgIds)
+        .limit(orgIds.length);
+
+      orgMap = new Map((orgRows || []).map((r) => [String(r.id), r]));
+    }
+
+    const membershipsWithName = memberships.map((m) => ({
+      ...m,
+      organization_name: orgMap.get(String(m.organization_id))?.name || null,
+    }));
+
+    const current = membershipsWithName[0] || null;
 
     return json({
       ok: true,
       id: user.id,
       email: user.email || "",
-      organization_id,
-      role,
+      organization_id: current?.organization_id || null,
+      role: current?.role || null,
+      organization_name: current?.organization_name || null,
+      organizations: membershipsWithName,
     });
   } catch (e) {
     return json({ ok: false, error: String(e?.message || e) }, 500);
