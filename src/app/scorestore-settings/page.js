@@ -3,129 +3,18 @@
 import React, { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import {
-  RefreshCcw,
-  Save,
-  UploadCloud,
-  HelpCircle,
   ArrowLeft,
   ExternalLink,
+  HelpCircle,
+  ImagePlus,
+  RefreshCcw,
+  Save,
+  Sparkles,
+  UploadCloud,
 } from "lucide-react";
-
 import { supabase, SUPABASE_CONFIGURED } from "@/lib/supabase";
 
 const SCORE_ORG_ID = "1f3b9980-a1c5-4557-b4eb-a75bb9a8aaa6";
-
-function HelpTip({ title, text }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span className="relative inline-flex">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-8 h-8 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center text-slate-700"
-        aria-label="Ayuda"
-        title="Ayuda"
-      >
-        <HelpCircle size={16} />
-      </button>
-      {open ? (
-        <div className="absolute z-[9999] top-10 right-0 w-[340px] max-w-[85vw]">
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-2xl p-4">
-            <p className="text-xs font-black text-slate-900">{title}</p>
-            <p className="text-sm font-semibold text-slate-600 leading-relaxed mt-1">{text}</p>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="mt-3 px-3 py-2 rounded-xl bg-slate-900 text-white font-black text-xs hover:bg-slate-800"
-            >
-              Entendido
-            </button>
-          </div>
-        </div>
-      ) : null}
-    </span>
-  );
-}
-
-function SectionCard({ title, subtitle, helpTitle, helpText, children }) {
-  return (
-    <section className="rounded-3xl border border-slate-200 bg-white shadow-sm p-5 md:p-6">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg md:text-xl font-black tracking-tight text-slate-900">{title}</h2>
-          {subtitle ? <p className="text-sm text-slate-500 mt-1">{subtitle}</p> : null}
-        </div>
-        {helpTitle && helpText ? <HelpTip title={helpTitle} text={helpText} /> : null}
-      </div>
-      <div className="mt-5">{children}</div>
-    </section>
-  );
-}
-
-function Field({ label, hint, children }) {
-  return (
-    <label className="block">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-black text-slate-800">{label}</span>
-      </div>
-      {hint ? <p className="text-xs text-slate-500 mt-1">{hint}</p> : null}
-      <div className="mt-2">{children}</div>
-    </label>
-  );
-}
-
-function Input(props) {
-  return (
-    <input
-      {...props}
-      className={clsx(
-        "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none",
-        "placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
-        props.className
-      )}
-    />
-  );
-}
-
-function Textarea(props) {
-  return (
-    <textarea
-      {...props}
-      className={clsx(
-        "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none",
-        "placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
-        props.className
-      )}
-    />
-  );
-}
-
-function Select(props) {
-  return (
-    <select
-      {...props}
-      className={clsx(
-        "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none",
-        "focus:border-blue-400 focus:ring-4 focus:ring-blue-100",
-        props.className
-      )}
-    />
-  );
-}
-
-function StatusPill({ ok, children }) {
-  return (
-    <span
-      className={clsx(
-        "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black",
-        ok ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-      )}
-    >
-      <span className={clsx("w-2 h-2 rounded-full", ok ? "bg-emerald-500" : "bg-amber-500")} />
-      {children}
-    </span>
-  );
-}
 
 const emptyData = {
   hero_title: "",
@@ -157,6 +46,150 @@ const emptyData = {
   whatsapp_e164: "",
   whatsapp_display: "",
 };
+
+function HelpTip({ title, text }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+        aria-label={title || "Ayuda"}
+        title={title || "Ayuda"}
+      >
+        <HelpCircle size={16} />
+      </button>
+
+      {open ? (
+        <div className="absolute right-0 top-12 z-[80] w-[340px] max-w-[86vw]">
+          <div className="rounded-3xl border border-white/10 bg-[rgba(6,14,28,0.96)] p-4 shadow-2xl backdrop-blur-xl">
+            <p className="text-sm font-black text-white">{title}</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-300">{text}</p>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="mt-4 rounded-2xl bg-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/15"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Panel({ className = "", children }) {
+  return (
+    <section
+      className={clsx(
+        "rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(8,18,34,0.88),rgba(8,20,37,0.78))] shadow-[0_18px_60px_rgba(0,0,0,0.28)] relative overflow-hidden",
+        className
+      )}
+    >
+      <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(135deg,rgba(42,168,255,0.10),transparent_28%),linear-gradient(315deg,rgba(18,213,197,0.08),transparent_26%)]" />
+      <div className="relative">{children}</div>
+    </section>
+  );
+}
+
+function Card({ className = "", children }) {
+  return (
+    <div
+      className={clsx(
+        "rounded-3xl border border-white/10 bg-white/5 shadow-[0_10px_30px_rgba(0,0,0,0.18)] relative overflow-hidden",
+        className
+      )}
+    >
+      <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent_32%)]" />
+      <div className="relative">{children}</div>
+    </div>
+  );
+}
+
+function GlassButton({ children, className = "", variant = "secondary", ...props }) {
+  return (
+    <button
+      {...props}
+      className={clsx(
+        "inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-black transition",
+        variant === "primary"
+          ? "bg-gradient-to-r from-sky-500 via-blue-500 to-cyan-400 text-slate-950 shadow-[0_18px_50px_rgba(42,168,255,0.28)] hover:brightness-110"
+          : "bg-white/5 text-white border border-white/10 hover:bg-white/10",
+        className
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Field({ label, hint, children }) {
+  return (
+    <label className="block">
+      <span className="text-sm font-black text-white">{label}</span>
+      {hint ? <p className="mt-1 text-xs text-slate-400">{hint}</p> : null}
+      <div className="mt-2">{children}</div>
+    </label>
+  );
+}
+
+function Input(props) {
+  return (
+    <input
+      {...props}
+      className={clsx(
+        "w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white outline-none",
+        "placeholder:text-slate-400 focus:border-sky-400/60 focus:ring-4 focus:ring-sky-500/15",
+        props.className
+      )}
+    />
+  );
+}
+
+function Textarea(props) {
+  return (
+    <textarea
+      {...props}
+      className={clsx(
+        "w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white outline-none",
+        "placeholder:text-slate-400 focus:border-sky-400/60 focus:ring-4 focus:ring-sky-500/15",
+        props.className
+      )}
+    />
+  );
+}
+
+function Select(props) {
+  return (
+    <select
+      {...props}
+      className={clsx(
+        "w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white outline-none",
+        "focus:border-sky-400/60 focus:ring-4 focus:ring-sky-500/15",
+        props.className
+      )}
+    />
+  );
+}
+
+function StatusPill({ ok, children }) {
+  return (
+    <span
+      className={clsx(
+        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.16em]",
+        ok
+          ? "border-white/10 bg-[rgba(34,197,94,0.14)] text-emerald-200"
+          : "border-white/10 bg-[rgba(245,158,11,0.16)] text-amber-200"
+      )}
+    >
+      <span className={clsx("h-2.5 w-2.5 rounded-full", ok ? "bg-emerald-400" : "bg-amber-400")} />
+      {children}
+    </span>
+  );
+}
 
 export default function ScoreStoreSettingsPage() {
   const [loading, setLoading] = useState(true);
@@ -195,7 +228,7 @@ export default function ScoreStoreSettingsPage() {
 
   const configured = useMemo(() => !!SUPABASE_CONFIGURED, []);
 
-function applyData(data) {
+  function applyData(data) {
     const d = { ...emptyData, ...(data || {}) };
     const theme = d.theme && typeof d.theme === "object" ? d.theme : emptyData.theme;
     const home = d.home && typeof d.home === "object" ? d.home : emptyData.home;
@@ -241,56 +274,42 @@ function applyData(data) {
     return session.access_token;
   }
 
-  useEffect(() => {
-    let alive = true;
+  const load = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      setOkMsg("");
 
-    async function bootstrap() {
-      try {
-        setLoading(true);
-        setError("");
-        setOkMsg("");
-
-        if (!configured || !supabase) {
-          throw new Error("Supabase no está configurado en este entorno.");
-        }
-
-        const token = await getToken();
-        if (!alive) return;
-        setSessionReady(true);
-
-        const res = await fetch(`/api/score/site-settings?org_id=${encodeURIComponent(SCORE_ORG_ID)}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        const payload = await res.json().catch(() => ({}));
-        if (!res.ok || !payload?.ok) {
-          throw new Error(payload?.error || "No se pudo leer site_settings.");
-        }
-
-        if (!alive) return;
-        applyData(payload.data || emptyData);
-      } catch (e) {
-        if (!alive) return;
-        setError(String(e?.message || e));
-      } finally {
-        if (alive) setLoading(false);
+      if (!configured || !supabase) {
+        throw new Error("Supabase no está configurado en este entorno.");
       }
-    }
 
-    bootstrap();
-    return () => {
-      alive = false;
-    };
-  }, [configured]);
+      const token = await getToken();
+      setSessionReady(true);
+
+      const res = await fetch(`/api/score/site-settings?org_id=${encodeURIComponent(SCORE_ORG_ID)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload?.ok) {
+        throw new Error(payload?.error || "No se pudo leer site_settings.");
+      }
+
+      applyData(payload.data || emptyData);
+    } catch (e) {
+      setError(String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
 
   async function uploadFileToBucket(file, folder = "scorestore") {
     if (!supabase) throw new Error("Supabase no está listo.");
-
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session?.access_token) throw new Error("Tu sesión expiró. Vuelve a entrar a UnicOs.");
 
     const ext = String(file.name.split(".").pop() || "jpg").toLowerCase();
     const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
@@ -299,6 +318,7 @@ function applyData(data) {
       cacheControl: "3600",
       upsert: false,
     });
+
     if (upErr) throw upErr;
 
     const { data } = supabase.storage.from("assets").getPublicUrl(fileName);
@@ -310,8 +330,10 @@ function applyData(data) {
   async function onUploadCover(e) {
     try {
       setError("");
+      setOkMsg("");
       const file = e.target.files?.[0];
       if (!file) return;
+
       setCoverUploading(true);
       const url = await uploadFileToBucket(file, "scorestore/hero");
       setHeroImage(url);
@@ -389,83 +411,104 @@ function applyData(data) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
-        <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm max-w-md w-full text-center">
-          <div className="w-12 h-12 rounded-2xl bg-blue-100 flex items-center justify-center mx-auto">
-            <RefreshCcw className="animate-spin text-blue-700" size={20} />
-          </div>
-          <p className="mt-4 text-base font-black text-slate-900">Cargando configuración real...</p>
-          <p className="mt-1 text-sm text-slate-500">Leyendo site_settings activo de Score Store.</p>
+      <main className="min-h-screen px-4 py-8">
+        <div className="mx-auto max-w-7xl">
+          <Panel className="p-8">
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-3xl border border-white/10 bg-[rgba(42,168,255,0.14)] text-sky-300">
+                <RefreshCcw className="animate-spin" size={18} />
+              </div>
+              <div>
+                <p className="text-lg font-black text-white">Cargando configuración real...</p>
+                <p className="text-sm text-slate-300">Leyendo site_settings de Score Store.</p>
+              </div>
+            </div>
+          </Panel>
         </div>
-      </div>
+      </main>
     );
   }
 
-return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <a
-              href="/"
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-800 hover:bg-slate-50"
-            >
-              <ArrowLeft size={16} />
-              Volver
-            </a>
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-blue-700">UnicOs / Score Store</p>
-              <h1 className="text-2xl md:text-3xl font-black tracking-tight">Site Settings real</h1>
+  return (
+    <main className="min-h-screen px-4 py-6 md:py-8">
+      <div className="mx-auto max-w-7xl space-y-5">
+        <Panel className="p-5 md:p-6">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex items-center gap-4">
+              <a
+                href="/"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white hover:bg-white/10"
+                aria-label="Volver"
+                title="Volver"
+              >
+                <ArrowLeft size={18} />
+              </a>
+
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-300">UnicOs / Score Store</p>
+                <h1 className="mt-1 text-3xl font-black text-white">Site settings real</h1>
+                <p className="mt-1 text-sm text-slate-300">
+                  Control directo del storefront consumido por Score Store.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusPill ok={configured && sessionReady}>Conexión lista</StatusPill>
+
+              <a
+                href="https://scorestore.netlify.app"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-black text-white hover:bg-white/10"
+              >
+                Ver sitio
+                <ExternalLink size={16} />
+              </a>
+
+              <GlassButton variant="secondary" onClick={load}>
+                <RefreshCcw size={16} />
+                Recargar
+              </GlassButton>
+
+              <GlassButton variant="primary" onClick={onSave} disabled={saving}>
+                {saving ? <RefreshCcw className="animate-spin" size={16} /> : <Save size={16} />}
+                Guardar
+              </GlassButton>
             </div>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusPill ok={configured && sessionReady}>Conexión real lista</StatusPill>
-            <a
-              href="https://scorestore.netlify.app"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-2xl bg-white border border-slate-200 px-4 py-3 text-sm font-black text-slate-800 hover:bg-slate-50"
-            >
-              Ver sitio
-              <ExternalLink size={16} />
-            </a>
-            <button
-              type="button"
-              onClick={onSave}
-              disabled={saving}
-              className={clsx(
-                "inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-black text-white",
-                saving ? "bg-slate-400" : "bg-blue-700 hover:bg-blue-800"
-              )}
-            >
-              {saving ? <RefreshCcw className="animate-spin" size={16} /> : <Save size={16} />}
-              Guardar
-            </button>
-          </div>
-        </div>
+        </Panel>
 
         {error ? (
-          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+          <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
             {error}
           </div>
         ) : null}
 
         {okMsg ? (
-          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-200">
             {okMsg}
           </div>
         ) : null}
 
-        <div className="mt-6 grid grid-cols-1 xl:grid-cols-3 gap-5">
-          <div className="xl:col-span-2 space-y-5">
-            <SectionCard
-              title="Hero, promo y operación"
-              subtitle="Esto sí pega con el storefront real de Score."
-              helpTitle="Hero y promo"
-              helpText="Aquí controlas el título del hero, la promo superior, el pixel y el modo mantenimiento."
-            >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_.8fr] gap-5">
+          <div className="space-y-5">
+            <Panel className="p-5 md:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-cyan-300">Hero y operación</p>
+                  <h2 className="mt-2 text-2xl font-black text-white">Contenido principal</h2>
+                  <p className="mt-2 text-sm text-slate-300">
+                    Esto sí modifica lo que Score Store consume como settings públicos.
+                  </p>
+                </div>
+                <HelpTip
+                  title="Hero, promo y operación"
+                  text="Aquí controlas portada, texto principal, promo, pixel y maintenance mode sin romper la estructura del storefront."
+                />
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Hero title">
                   <Input value={hero_title} onChange={(e) => setHeroTitle(e.target.value)} placeholder="Merch Oficial SCORE" />
                 </Field>
@@ -480,8 +523,8 @@ return (
                   </Field>
                 </div>
 
-                <Field label="Subir portada">
-                  <label className="w-full rounded-2xl border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 px-4 py-4 flex items-center justify-center gap-2 cursor-pointer text-sm font-black text-slate-700">
+                <Field label="Subir portada" hint="Se sube al bucket assets y deja URL pública lista.">
+                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-white/14 bg-white/5 px-4 py-4 text-sm font-black text-white hover:bg-white/10">
                     {coverUploading ? <RefreshCcw className="animate-spin" size={16} /> : <UploadCloud size={16} />}
                     {coverUploading ? "Subiendo..." : "Seleccionar archivo"}
                     <input type="file" accept="image/*" className="hidden" onChange={onUploadCover} />
@@ -508,19 +551,33 @@ return (
 
                 <div className="md:col-span-2">
                   <Field label="Texto promo">
-                    <Textarea rows={3} value={promo_text} onChange={(e) => setPromoText(e.target.value)} placeholder="🔥 ENVÍOS NACIONALES E INTERNACIONALES 🔥" />
+                    <Textarea
+                      rows={3}
+                      value={promo_text}
+                      onChange={(e) => setPromoText(e.target.value)}
+                      placeholder="🔥 ENVÍOS NACIONALES E INTERNACIONALES 🔥"
+                    />
                   </Field>
                 </div>
               </div>
-            </SectionCard>
+            </Panel>
 
-            <SectionCard
-              title="Contacto y redes"
-              subtitle="Esto reemplaza los datos hardcodeados del storefront."
-              helpTitle="Contacto"
-              helpText="Aquí van los datos oficiales que debe leer Score Store para footer, legal y soporte."
-            >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Panel className="p-5 md:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-cyan-300">Contacto y redes</p>
+                  <h2 className="mt-2 text-2xl font-black text-white">Datos públicos reales</h2>
+                  <p className="mt-2 text-sm text-slate-300">
+                    Esto alimenta footer, legal y puntos de soporte visibles del storefront.
+                  </p>
+                </div>
+                <HelpTip
+                  title="Contacto y redes"
+                  text="Aquí deben ir los datos oficiales que Score Store publicará en soporte, legal y contacto."
+                />
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Correo">
                   <Input value={contact_email} onChange={(e) => setContactEmail(e.target.value)} placeholder="correo@dominio.com" />
                 </Field>
@@ -546,90 +603,144 @@ return (
                   <Input value={tiktok} onChange={(e) => setTiktok(e.target.value)} placeholder="https://tiktok.com/@..." />
                 </Field>
               </div>
-            </SectionCard>
-<SectionCard
-              title="Tema y notas operativas"
-              subtitle="Control visual suave y notas informativas del sitio."
-              helpTitle="Tema y notas"
-              helpText="Esto ajusta acentos y notas sin tocar drásticamente la estructura ni el hero copy principal."
-            >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            </Panel>
+
+            <Panel className="p-5 md:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-cyan-300">Tema y notas</p>
+                  <h2 className="mt-2 text-2xl font-black text-white">Visual y operación</h2>
+                  <p className="mt-2 text-sm text-slate-300">
+                    Acentos, partículas y notas informativas sin tocar drásticamente el hero copy ni la arquitectura.
+                  </p>
+                </div>
+                <HelpTip
+                  title="Tema y notas"
+                  text="Sirve para modular color, microefectos y mensajes operativos del storefront sin romper el diseño base."
+                />
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Accent color">
                   <Input value={accent} onChange={(e) => setAccent(e.target.value)} placeholder="#e10600" />
                 </Field>
+
                 <Field label="Accent 2 / oscuro">
                   <Input value={accent2} onChange={(e) => setAccent2(e.target.value)} placeholder="#111111" />
                 </Field>
+
                 <Field label="Particles">
                   <Select value={particles ? "1" : "0"} onChange={(e) => setParticles(e.target.value === "1")}>
                     <option value="1">Sí</option>
                     <option value="0">No</option>
                   </Select>
                 </Field>
+
                 <Field label="Horario de soporte">
-                  <Input value={support_hours} onChange={(e) => setSupportHours(e.target.value)} placeholder="Lunes a viernes de 9:00 a 18:00" />
+                  <Input
+                    value={support_hours}
+                    onChange={(e) => setSupportHours(e.target.value)}
+                    placeholder="Lunes a viernes de 9:00 a 18:00"
+                  />
                 </Field>
+
                 <div className="md:col-span-2">
                   <Field label="Nota footer">
-                    <Textarea rows={3} value={footer_note} onChange={(e) => setFooterNote(e.target.value)} placeholder="Hecho con pasión. Fabricado y operado por..." />
+                    <Textarea
+                      rows={3}
+                      value={footer_note}
+                      onChange={(e) => setFooterNote(e.target.value)}
+                      placeholder="Hecho con pasión. Fabricado y operado por..."
+                    />
                   </Field>
                 </div>
+
                 <div className="md:col-span-2">
                   <Field label="Nota de envíos">
-                    <Textarea rows={3} value={shipping_note} onChange={(e) => setShippingNote(e.target.value)} placeholder="Tiempos, cobertura y observaciones..." />
+                    <Textarea
+                      rows={3}
+                      value={shipping_note}
+                      onChange={(e) => setShippingNote(e.target.value)}
+                      placeholder="Tiempos, cobertura y observaciones..."
+                    />
                   </Field>
                 </div>
+
                 <div className="md:col-span-2">
                   <Field label="Nota de cambios y devoluciones">
-                    <Textarea rows={3} value={returns_note} onChange={(e) => setReturnsNote(e.target.value)} placeholder="Política clara y entendible..." />
+                    <Textarea
+                      rows={3}
+                      value={returns_note}
+                      onChange={(e) => setReturnsNote(e.target.value)}
+                      placeholder="Política clara y entendible..."
+                    />
                   </Field>
                 </div>
               </div>
-            </SectionCard>
+            </Panel>
           </div>
 
           <div className="space-y-5">
-            <SectionCard
-              title="Vista rápida"
-              subtitle="Lectura rápida del estado actual."
-              helpTitle="Vista rápida"
-              helpText="Sirve para detectar si ya quedó conectado hero, promo, contacto y redes."
-            >
-              <div className="space-y-3">
-                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Estado</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <StatusPill ok={configured}>Supabase</StatusPill>
-                    <StatusPill ok={sessionReady}>Sesión</StatusPill>
-                    <StatusPill ok={!!contact_email}>Correo</StatusPill>
-                    <StatusPill ok={!!hero_title}>Hero</StatusPill>
-                    <StatusPill ok={!!promo_text || !promo_active}>Promo</StatusPill>
-                  </div>
+            <Panel className="p-5 md:p-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-cyan-300">
+                  <Sparkles size={18} />
                 </div>
-
-                <div className="rounded-2xl bg-white border border-slate-200 p-4">
-                  <p className="text-sm font-black text-slate-900">Score Store</p>
-                  <div className="mt-3 text-xs text-slate-500 space-y-1">
-                    <p><span className="font-black text-slate-700">Correo:</span> {contact_email || "No configurado"}</p>
-                    <p><span className="font-black text-slate-700">WhatsApp:</span> {whatsapp_display || "No configurado"}</p>
-                    <p><span className="font-black text-slate-700">Facebook:</span> {facebook || "No configurado"}</p>
-                  </div>
+                <div>
+                  <p className="text-sm font-black text-white">Vista rápida</p>
+                  <p className="text-xs text-slate-400">Confirmación visual del estado actual.</p>
                 </div>
+              </div>
 
-                <button
-                  type="button"
-                  onClick={onSave}
-                  disabled={saving}
-                  className={clsx(
-                    "w-full inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-black text-white",
-                    saving ? "bg-slate-400" : "bg-slate-900 hover:bg-slate-800"
-                  )}
-                >
+              <div className="mt-5 flex flex-wrap gap-2">
+                <StatusPill ok={configured}>Supabase</StatusPill>
+                <StatusPill ok={sessionReady}>Sesión</StatusPill>
+                <StatusPill ok={!!contact_email}>Correo</StatusPill>
+                <StatusPill ok={!!hero_title}>Hero</StatusPill>
+                <StatusPill ok={!!promo_text || !promo_active}>Promo</StatusPill>
+              </div>
+
+              <Card className="mt-5 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Score Store</p>
+                <div className="mt-3 space-y-2 text-sm text-slate-300">
+                  <p><span className="font-black text-white">Correo:</span> {contact_email || "No configurado"}</p>
+                  <p><span className="font-black text-white">WhatsApp:</span> {whatsapp_display || "No configurado"}</p>
+                  <p><span className="font-black text-white">Facebook:</span> {facebook || "No configurado"}</p>
+                </div>
+              </Card>
+
+              <div className="mt-5">
+                <GlassButton variant="primary" onClick={onSave} disabled={saving} className="w-full">
                   {saving ? <RefreshCcw className="animate-spin" size={16} /> : <Save size={16} />}
                   Guardar site_settings
-                </button>
+                </GlassButton>
               </div>
-            </SectionCard>
+            </Panel>
+
+            <Panel className="p-5 md:p-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-cyan-300">
+                  <ImagePlus size={18} />
+                </div>
+                <div>
+                  <p className="text-sm font-black text-white">Vista previa operativa</p>
+                  <p className="text-xs text-slate-400">Lectura rápida del hero actual.</p>
+                </div>
+              </div>
+
+              <Card className="mt-5 overflow-hidden">
+                <div className="aspect-[16/10] bg-[radial-gradient(circle_at_20%_20%,rgba(42,168,255,0.16),transparent_0_28%),linear-gradient(180deg,#081322,#0a172a)] flex items-center justify-center">
+                  {hero_image ? (
+                    <img src={hero_image} alt="Hero actual" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="px-6 text-center">
+                      <p className="text-sm font-black text-white">{hero_title || "Sin portada configurada"}</p>
+                      <p className="mt-2 text-xs text-slate-400">Cuando subas una portada, aparece aquí.</p>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </Panel>
           </div>
         </div>
       </div>
