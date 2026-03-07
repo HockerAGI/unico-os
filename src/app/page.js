@@ -38,166 +38,201 @@ const supabase =
       })
     : null;
 
+const SUPABASE_READY = !!supabase;
+
 /* =========================================================
-   Helpers
+   Const / helpers
    ========================================================= */
-const num = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+const SCORE_ORG_ID = "1f3b9980-a1c5-4557-b4eb-a75bb9a8aaa6";
+
+const ORG_LABELS = {
+  [SCORE_ORG_ID]: "Score Store",
 };
 
-const moneyMXN = (v) =>
+const safeNum = (v, d = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : d;
+};
+
+const safeStr = (v, d = "") => (typeof v === "string" ? v : v == null ? d : String(v));
+
+const money = (v) =>
   new Intl.NumberFormat("es-MX", {
     style: "currency",
     currency: "MXN",
     maximumFractionDigits: 2,
-  }).format(num(v));
+  }).format(safeNum(v, 0));
 
-const safeStr = (v) => String(v ?? "").trim();
+const compactMoney = (v) =>
+  new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(safeNum(v, 0));
 
-const humanDate = (iso) => {
-  try {
-    return iso ? new Date(iso).toLocaleString("es-MX") : "—";
-  } catch {
-    return "—";
-  }
+const shortDateTime = (value) => {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(d);
 };
 
-const ROLE_PERMS = {
-  owner: { view_finance: true, write: true },
-  admin: { view_finance: true, write: true },
-  marketing: { view_finance: true, write: false },
-  support: { view_finance: false, write: false },
-  viewer: { view_finance: false, write: false },
-};
-
-const hasPermLocal = (role, key) => {
-  const r = String(role || "viewer");
-  return !!ROLE_PERMS[r]?.[key];
-};
-
-/* =========================================================
-   UI atoms
-   ========================================================= */
-function HelpTip({ title = "Ayuda", text = "", align = "right" }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-
+function useMounted() {
+  const [mounted, setMounted] = useState(false);
   useEffect(() => {
-    const onDoc = (e) => {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    setMounted(true);
   }, []);
+  return mounted;
+}
 
+function HealthPill({ ok, label }) {
   return (
-    <span className="relative inline-flex" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-sky-100 bg-white/90 hover:bg-white shadow-sm"
-        aria-label="Ayuda"
-        title="¿Qué significa esto?"
-      >
-        <HelpCircle size={16} className="text-sky-700" />
-      </button>
-
-      {open ? (
-        <div
-          className={[
-            "absolute z-[9999] mt-2 w-[340px] max-w-[85vw] rounded-2xl border border-sky-100 bg-white shadow-2xl p-4",
-            align === "left" ? "left-0" : "right-0",
-          ].join(" ")}
-          role="dialog"
-          aria-label={title}
-        >
-          <div className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-700">
-            {title}
-          </div>
-          <div className="mt-2 text-sm font-semibold text-slate-700 leading-relaxed">
-            {text || "—"}
-          </div>
-        </div>
-      ) : null}
+    <span
+      className={clsx(
+        "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black",
+        ok ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+      )}
+    >
+      <span className={clsx("h-2.5 w-2.5 rounded-full", ok ? "bg-emerald-500" : "bg-amber-500")} />
+      {label}
     </span>
   );
 }
 
-function MiniKPI({ icon, label, value, note, helpTitle, helpText }) {
+function IconButton({ children, className = "", ...props }) {
   return (
-    <div className="rounded-3xl border border-sky-100 bg-white/95 p-4 shadow-[0_12px_35px_rgba(15,23,42,0.06)]">
+    <button
+      {...props}
+      className={clsx(
+        "inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-black transition active:scale-[0.99]",
+        className
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Card({ className = "", children }) {
+  return <div className={clsx("rounded-[28px] border border-slate-200 bg-white shadow-sm", className)}>{children}</div>;
+}
+
+function SectionTitle({ eyebrow, title, text, action }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        {eyebrow ? <p className="text-[11px] font-black uppercase tracking-[0.22em] text-blue-700">{eyebrow}</p> : null}
+        <h2 className="mt-1 text-xl md:text-2xl font-black tracking-tight text-slate-900">{title}</h2>
+        {text ? <p className="mt-2 text-sm md:text-[15px] text-slate-500 max-w-3xl">{text}</p> : null}
+      </div>
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
+  );
+}
+
+function MetricCard({ icon, label, value, sub, tone = "slate" }) {
+  const tones = {
+    slate: "bg-slate-50 text-slate-700 ring-slate-200",
+    emerald: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    blue: "bg-blue-50 text-blue-700 ring-blue-200",
+    amber: "bg-amber-50 text-amber-700 ring-amber-200",
+    rose: "bg-rose-50 text-rose-700 ring-rose-200",
+  };
+  return (
+    <Card className="p-5">
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-              {label}
-            </div>
-            {helpText ? <HelpTip title={helpTitle || label} text={helpText} /> : null}
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] font-black text-slate-500">{label}</p>
+          <p className="mt-2 text-2xl md:text-[28px] font-black tracking-tight text-slate-900">{value}</p>
+          {sub ? <p className="mt-2 text-xs font-semibold text-slate-500">{sub}</p> : null}
+        </div>
+        <div className={clsx("h-12 w-12 rounded-2xl ring-1 flex items-center justify-center", tones[tone])}>{icon}</div>
+      </div>
+    </Card>
+  );
+}
+
+function EmptyState({ icon, title, text, action }) {
+  return (
+    <Card className="p-8">
+      <div className="flex flex-col items-center text-center">
+        <div className="h-14 w-14 rounded-2xl bg-slate-100 text-slate-600 flex items-center justify-center">{icon}</div>
+        <p className="mt-4 text-lg font-black tracking-tight text-slate-900">{title}</p>
+        <p className="mt-2 text-sm text-slate-500 max-w-lg">{text}</p>
+        {action ? <div className="mt-5">{action}</div> : null}
+      </div>
+    </Card>
+  );
+}
+
+function LoadingShell({ label = "Cargando datos reales..." }) {
+  return (
+    <div className="min-h-[45vh] flex items-center justify-center">
+      <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm p-8 w-full max-w-md">
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 rounded-2xl bg-blue-50 text-blue-700 ring-1 ring-blue-200 flex items-center justify-center">
+            <RefreshCcw className="animate-spin" size={18} />
+          </div>
+          <div>
+            <p className="text-base font-black text-slate-900">UnicOs</p>
+            <p className="text-sm text-slate-500">{label}</p>
           </div>
         </div>
-        <div className="text-sky-700">{icon}</div>
       </div>
-      <div className="mt-3 text-xl font-black text-slate-900">{value}</div>
-      {note ? <div className="mt-1 text-xs font-semibold text-slate-500">{note}</div> : null}
     </div>
   );
 }
 
-function Toast({ toast, clear }) {
-  if (!toast?.text) return null;
-
+function HelpTip({ title, text }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="fixed bottom-6 left-0 right-0 z-[99999] flex justify-center px-4">
-      <div
-        className={clsx(
-          "w-full max-w-xl rounded-2xl border shadow-lg p-4 flex items-start justify-between gap-4",
-          toast.type === "ok"
-            ? "border-emerald-200 bg-emerald-50"
-            : "border-red-200 bg-red-50"
-        )}
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="h-9 w-9 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center"
+        aria-label={title || "Ayuda"}
+        title={title || "Ayuda"}
       >
-        <div className="text-sm font-semibold text-slate-900">{toast.text}</div>
-        <button
-          className="w-9 h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center"
-          onClick={clear}
-          aria-label="Cerrar"
-        >
-          <X size={16} />
-        </button>
-      </div>
+        <HelpCircle size={16} />
+      </button>
+      {open ? (
+        <div className="absolute right-0 top-11 z-[60] w-[320px] max-w-[88vw]">
+          <div className="rounded-[24px] border border-slate-200 bg-white shadow-2xl p-4">
+            <p className="text-sm font-black text-slate-900">{title}</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">{text}</p>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="mt-4 rounded-2xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-800"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-/* =========================================================
-   Main
-   ========================================================= */
-export default function Page() {
-  const [toast, setToast] = useState(null);
-  const showToast = useCallback((t) => setToast(t), []);
-  const clearToast = useCallback(() => setToast(null), []);
+function TopShell({ orgName, onRefresh, refreshing, onOpenSettings, currentTab, setCurrentTab }) {
+  const tabs = [
+    { key: "dashboard", label: "Dashboard", icon: <BarChart3 size={16} /> },
+    { key: "products", label: "Productos", icon: <Package size={16} /> },
+    { key: "settings", label: "Ajustes", icon: <Settings size={16} /> },
+  ];
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#e0f2fe_0%,#f8fafc_40%,#f8fafc_100%)]">
-      <TopShell />
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        <AppRoot toast={showToast} />
-      </div>
-      <Toast toast={toast} clear={clearToast} />
-    </div>
-  );
-}
-
-function TopShell() {
-  return (
-    <div className="sticky top-0 z-50 border-b border-sky-100 bg-white/85 backdrop-blur-xl">
-      <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="relative w-11 h-11 rounded-2xl overflow-hidden border border-sky-100 bg-white shadow-sm">
+    <Card className="p-4 md:p-5 sticky top-3 z-30 backdrop-blur supports-[backdrop-filter]:bg-white/90">
+      <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="relative h-12 w-12 rounded-2xl bg-slate-100 ring-1 ring-slate-200 overflow-hidden shrink-0">
             <Image
-              src="/assets/logo-unicos.png"
+              src="/logo-unico.png"
               alt="UnicOs"
               fill
               className="object-contain p-1.5"
@@ -205,1095 +240,821 @@ function TopShell() {
               priority
             />
           </div>
-
           <div className="min-w-0">
-            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-700">
-              UnicOs Admin
-            </div>
-            <div className="text-lg font-black text-slate-900 truncate">
-              Control comercial y operativo
-            </div>
+            <p className="text-[11px] uppercase tracking-[0.22em] font-black text-blue-700">Panel maestro</p>
+            <h1 className="truncate text-xl md:text-2xl font-black tracking-tight text-slate-900">UnicOs</h1>
+            <p className="truncate text-sm text-slate-500">{orgName || "Sin organización activa"}</p>
           </div>
         </div>
-
-        <span className="hidden md:inline-flex items-center gap-2 px-3 py-2 rounded-2xl border border-sky-100 bg-white text-sm font-black text-slate-800 shadow-sm">
-          <Shield size={16} className="text-sky-700" />
-          Panel protegido
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function AppRoot({ toast }) {
-  const [token, setToken] = useState("");
-  const [sessionEmail, setSessionEmail] = useState("");
-  const [orgId, setOrgId] = useState("");
-  const [orgName, setOrgName] = useState("—");
-  const [admin, setAdmin] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState("dashboard");
-
-  const canWrite = useMemo(() => hasPermLocal(admin?.role, "write"), [admin]);
-  const canFinance = useMemo(() => hasPermLocal(admin?.role, "view_finance"), [admin]);
-
-  useEffect(() => {
-    try {
-      const t = localStorage.getItem("unicos_token") || "";
-      const e = localStorage.getItem("unicos_email") || "";
-      if (t) setToken(t);
-      if (e) setSessionEmail(e);
-    } catch {}
-  }, []);
-
-  const logout = useCallback(() => {
-    try {
-      localStorage.removeItem("unicos_token");
-      localStorage.removeItem("unicos_email");
-      localStorage.removeItem("unicos_org_id");
-    } catch {}
-    setToken("");
-    setSessionEmail("");
-    setOrgId("");
-    setOrgName("—");
-    setAdmin(null);
-    toast?.({ type: "ok", text: "Sesión cerrada." });
-  }, [toast]);
-
-  const resolveOrg = useCallback(async () => {
-    if (!supabase) {
-      toast?.({ type: "bad", text: "Supabase no está configurado." });
-      return;
-    }
-    if (!token) return;
-
-    setBusy(true);
-    try {
-      const storedOrg = (() => {
-        try {
-          return localStorage.getItem("unicos_org_id") || "";
-        } catch {
-          return "";
-        }
-      })();
-
-      const whoRes = await fetch("/api/me", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const who = await whoRes.json().catch(() => ({}));
-      if (!whoRes.ok || !who?.ok) throw new Error(who?.error || "No autorizado.");
-
-      const email = safeStr(who.email || "");
-      if (email) setSessionEmail(email);
-
-      let targetOrg = storedOrg || String(who?.organization_id || "").trim();
-
-      if (!targetOrg) {
-        const { data: rows, error } = await supabase
-          .from("admin_users")
-          .select("organization_id, org_id, role, is_active, email")
-          .eq("is_active", true)
-          .ilike("email", email)
-          .order("created_at", { ascending: true })
-          .limit(1);
-
-        if (error) throw error;
-        const row = rows?.[0];
-        targetOrg = row?.organization_id || row?.org_id || "";
-        if (!targetOrg) throw new Error("No encontramos una organización ligada a este acceso.");
-      }
-
-      setOrgId(targetOrg);
-      try {
-        localStorage.setItem("unicos_org_id", targetOrg);
-      } catch {}
-
-      let adminRow = null;
-
-      const q1 = await supabase
-        .from("admin_users")
-        .select("id, role, is_active, email, user_id, organization_id, org_id")
-        .eq("organization_id", targetOrg)
-        .eq("is_active", true)
-        .or(`email.ilike.${email},user_id.eq.${who.id}`)
-        .limit(1)
-        .maybeSingle();
-
-      if (!q1.error && q1.data) adminRow = q1.data;
-
-      if (!adminRow) {
-        const q2 = await supabase
-          .from("admin_users")
-          .select("id, role, is_active, email, user_id, organization_id, org_id")
-          .eq("org_id", targetOrg)
-          .eq("is_active", true)
-          .or(`email.ilike.${email},user_id.eq.${who.id}`)
-          .limit(1)
-          .maybeSingle();
-
-        if (!q2.error && q2.data) adminRow = q2.data;
-      }
-
-      if (!adminRow) throw new Error("Este acceso no tiene permisos para entrar a UnicOs.");
-
-      setAdmin(adminRow);
-
-      const { data: org, error: orgErr } = await supabase
-        .from("organizations")
-        .select("id,name")
-        .eq("id", targetOrg)
-        .limit(1)
-        .maybeSingle();
-
-      if (!orgErr && org?.name) setOrgName(org.name);
-
-      toast?.({ type: "ok", text: "Panel listo." });
-    } catch (e) {
-      toast?.({ type: "bad", text: String(e?.message || e) });
-      logout();
-    } finally {
-      setBusy(false);
-    }
-  }, [token, toast, logout]);
-
-  useEffect(() => {
-    resolveOrg();
-  }, [resolveOrg]);
-
-  const onSaveToken = useCallback(() => {
-    const t = safeStr(token);
-    if (!t) return toast?.({ type: "bad", text: "Pega primero tu token de acceso." });
-    try {
-      localStorage.setItem("unicos_token", t);
-      if (sessionEmail) localStorage.setItem("unicos_email", sessionEmail);
-    } catch {}
-    toast?.({ type: "ok", text: "Acceso guardado." });
-    resolveOrg();
-  }, [token, sessionEmail, toast, resolveOrg]);
-
-  if (!token) {
-    return (
-      <LoginScreen
-        token={token}
-        setToken={setToken}
-        email={sessionEmail}
-        setEmail={setSessionEmail}
-        onSave={onSaveToken}
-      />
-    );
-  }
-
-  if (!orgId || !admin) {
-    return (
-      <div className="rounded-[2rem] border border-sky-100 bg-white/95 shadow-[0_20px_60px_rgba(15,23,42,0.08)] p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700 mb-1">
-              Preparando panel
-            </p>
-            <h3 className="text-xl font-black text-slate-900">Estamos cargando tu espacio de control</h3>
-            <p className="text-sm font-semibold text-slate-600 mt-1">
-              Verificando acceso, permisos y datos comerciales.
-            </p>
+          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 rounded-2xl bg-slate-50 p-1 ring-1 ring-slate-200">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setCurrentTab(tab.key)}
+                className={clsx(
+                  "inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-black transition",
+                  currentTab === tab.key
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-white hover:text-slate-900"
+                )}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
           </div>
-          <button
-            onClick={resolveOrg}
-            className="px-4 py-2 rounded-2xl border border-sky-100 bg-white hover:bg-sky-50 font-black text-sm flex items-center gap-2"
+
+          <IconButton
+            type="button"
+            onClick={onOpenSettings}
+            className="bg-white text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50"
           >
-            <RefreshCcw size={16} className={busy ? "animate-spin" : ""} /> Reintentar
-          </button>
+            <Settings size={16} />
+            Ajustes
+          </IconButton>
+
+          <IconButton
+            type="button"
+            onClick={onRefresh}
+            className="bg-blue-700 text-white hover:bg-blue-800"
+          >
+            <RefreshCcw size={16} className={refreshing ? "animate-spin" : ""} />
+            Actualizar
+          </IconButton>
         </div>
       </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <HeaderBar orgName={orgName} role={admin.role} email={sessionEmail} onLogout={logout} />
-      <NavTabs tab={tab} setTab={setTab} canWrite={canWrite} canFinance={canFinance} />
-
-      {tab === "dashboard" ? <DashboardView orgId={orgId} token={token} toast={toast} /> : null}
-      {tab === "products" ? <ProductsView orgId={orgId} toast={toast} /> : null}
-      {tab === "site" ? <SiteSettingsView orgId={orgId} canWrite={canWrite} toast={toast} /> : null}
-      {tab === "ops" ? <OpsView orgId={orgId} /> : null}
-    </div>
+    </Card>
   );
 }
 
 function HeaderBar({ orgName, role, email, onLogout }) {
   return (
-    <div className="rounded-[2rem] border border-sky-100 bg-white/95 shadow-[0_20px_60px_rgba(15,23,42,0.08)] p-6">
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700 mb-1">
-            Centro de control
-          </p>
-          <h2 className="text-2xl md:text-3xl font-black text-slate-900 truncate">
-            {orgName}
-          </h2>
-          <p className="text-sm font-semibold text-slate-600 mt-2">
-            Administra ventas, catálogo, configuración comercial y operación desde un solo lugar.
-          </p>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl border border-sky-100 bg-sky-50 text-sm font-black text-sky-900">
-              <BadgeCheck size={16} className="text-sky-700" />
-              Rol: {String(role || "viewer")}
-            </span>
-            <span className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl border border-slate-200 bg-white text-sm font-semibold text-slate-700">
-              <Lock size={16} className="text-slate-500" />
-              {email || "—"}
-            </span>
+    <Card className="p-4 md:p-5">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="relative h-14 w-14 rounded-2xl bg-slate-100 ring-1 ring-slate-200 overflow-hidden shrink-0">
+            <Image
+              src="/logo-unico.png"
+              alt="UnicOs"
+              fill
+              className="object-contain p-2"
+              sizes="56px"
+              priority
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-[0.22em] font-black text-blue-700">Producción conectada</p>
+            <h2 className="text-lg md:text-xl font-black tracking-tight text-slate-900 truncate">{orgName || "Sin organización"}</h2>
+            <p className="text-sm text-slate-500 truncate">
+              {email || "Sin correo"} · {safeStr(role || "sin rol").toUpperCase()}
+            </p>
           </div>
         </div>
 
-        <button
-          onClick={onLogout}
-          className="px-4 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 font-black text-sm"
-        >
-          Salir
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <HealthPill ok={SUPABASE_READY} label="Supabase" />
+          <HealthPill ok label="Stripe" />
+          <HealthPill ok label="Envia" />
+          <HealthPill ok label="IA" />
+
+          <IconButton
+            type="button"
+            onClick={onLogout}
+            className="bg-white text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50"
+          >
+            <Lock size={16} />
+            Salir
+          </IconButton>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function LoginCard({ onLogin, loading, error }) {
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 px-4 py-8 flex items-center justify-center">
+      <div className="w-full max-w-lg">
+        <Card className="p-6 md:p-8">
+          <div className="flex items-center gap-4">
+            <div className="relative h-14 w-14 rounded-2xl bg-slate-100 ring-1 ring-slate-200 overflow-hidden">
+              <Image src="/logo-unico.png" alt="UnicOs" fill className="object-contain p-2" sizes="56px" priority />
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.22em] font-black text-blue-700">Control total</p>
+              <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900">UnicOs</h1>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-[24px] bg-slate-50 ring-1 ring-slate-200 p-5">
+            <p className="text-base font-black text-slate-900">Acceso al panel maestro</p>
+            <p className="mt-2 text-sm text-slate-500">
+              Entra con tu acceso real de Supabase para administrar Score Store desde UnicOs.
+            </p>
+
+            {error ? (
+              <div className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 ring-1 ring-rose-200">
+                {error}
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              disabled={loading}
+              onClick={onLogin}
+              className={clsx(
+                "mt-5 w-full rounded-2xl px-4 py-3 text-sm font-black text-white transition",
+                loading ? "bg-slate-400" : "bg-blue-700 hover:bg-blue-800"
+              )}
+            >
+              {loading ? "Entrando..." : "Entrar con magic link"}
+            </button>
+          </div>
+        </Card>
       </div>
     </div>
   );
 }
 
-function NavTabs({ tab, setTab, canWrite, canFinance }) {
-  const tabs = [
-    { id: "dashboard", label: "Resumen", icon: <BarChart3 size={16} /> },
-    { id: "products", label: "Catálogo", icon: <Package size={16} /> },
-    { id: "site", label: "Configuración", icon: <Settings size={16} />, gated: !canWrite },
-    { id: "ops", label: "Operación", icon: <Truck size={16} />, gated: !canFinance },
-  ];
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          onClick={() => setTab(t.id)}
-          disabled={!!t.gated}
-          className={clsx(
-            "px-4 py-2.5 rounded-2xl border font-black text-sm inline-flex items-center gap-2 transition",
-            tab === t.id
-              ? "border-sky-600 bg-sky-600 text-white shadow-[0_12px_30px_rgba(2,132,199,0.25)]"
-              : "border-sky-100 bg-white hover:bg-sky-50 text-slate-900",
-            t.gated ? "opacity-50 cursor-not-allowed" : ""
-          )}
-        >
-          {t.icon} {t.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function LoginScreen({ token, setToken, email, setEmail, onSave }) {
-  return (
-    <div className="max-w-5xl mx-auto">
-      <div className="rounded-[2.2rem] border border-sky-100 bg-white/95 shadow-[0_25px_70px_rgba(15,23,42,0.08)] overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-[1.08fr_0.92fr]">
-          <div className="relative bg-[linear-gradient(135deg,#082f49_0%,#0369a1_45%,#14b8a6_100%)] p-8 md:p-10 text-white">
-            <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_top_right,white_0%,transparent_45%)]" />
-            <div className="relative z-10">
-              <div className="flex items-center gap-3">
-                <div className="relative w-14 h-14 rounded-2xl overflow-hidden bg-white/10 border border-white/15 backdrop-blur">
-                  <Image
-                    src="/assets/logo-unicos.png"
-                    alt="UnicOs"
-                    fill
-                    className="object-contain p-1.5"
-                    sizes="56px"
-                    priority
-                  />
-                </div>
-                <div>
-                  <div className="text-[11px] font-black uppercase tracking-[0.22em] text-sky-100">
-                    UnicOs Admin
-                  </div>
-                  <div className="text-2xl font-black">Panel maestro comercial</div>
-                </div>
-              </div>
-
-              <h2 className="mt-8 text-3xl md:text-4xl font-black leading-tight">
-                Controla Score Store y tu operación con una vista más clara, rápida y profesional.
-              </h2>
-
-              <p className="mt-4 text-sm md:text-base font-semibold text-sky-50/95 max-w-xl leading-relaxed">
-                Revisa ventas, costos, catálogo y configuración desde un solo panel. Todo con una interfaz más clara, moderna y lista para trabajar.
-              </p>
-
-              <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="rounded-2xl bg-white/10 border border-white/15 px-4 py-4 backdrop-blur">
-                  <div className="text-sm font-black">Ventas</div>
-                  <div className="text-xs font-semibold text-sky-100/90 mt-1">Monitorea ingresos y rendimiento</div>
-                </div>
-                <div className="rounded-2xl bg-white/10 border border-white/15 px-4 py-4 backdrop-blur">
-                  <div className="text-sm font-black">Catálogo</div>
-                  <div className="text-xs font-semibold text-sky-100/90 mt-1">Revisa productos, stock e imagen</div>
-                </div>
-                <div className="rounded-2xl bg-white/10 border border-white/15 px-4 py-4 backdrop-blur">
-                  <div className="text-sm font-black">Operación</div>
-                  <div className="text-xs font-semibold text-sky-100/90 mt-1">Mantén control de logística y cobros</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-8 md:p-10 bg-white">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700 mb-1">
-                  Acceso seguro
-                </p>
-                <h3 className="text-2xl font-black text-slate-900">Entra a tu panel</h3>
-                <p className="text-sm font-semibold text-slate-600 mt-2">
-                  Usa tu acceso actual de UnicOs para abrir el panel.
-                </p>
-              </div>
-
-              <HelpTip
-                title="¿Qué acceso necesito?"
-                text="Este panel hoy espera un token guardado por tu flujo de autenticación. Si no tienes uno, hay que conectar inicio de sesión real para que el dueño no tenga que pegar nada."
-                align="left"
-              />
-            </div>
-
-            <div className="mt-8 space-y-4">
-              <div>
-                <label className="text-xs font-black text-slate-700">Correo (opcional)</label>
-                <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="mt-1 w-full px-4 py-3.5 rounded-2xl border border-slate-200 bg-slate-50 font-semibold text-slate-900 outline-none focus:bg-white focus:border-sky-300"
-                  placeholder="correo@empresa.com"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-700">Token de acceso</label>
-                <textarea
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  rows={5}
-                  className="mt-1 w-full px-4 py-3.5 rounded-2xl border border-slate-200 bg-slate-50 font-semibold text-slate-900 outline-none focus:bg-white focus:border-sky-300"
-                  placeholder="Pega aquí tu acceso actual"
-                />
-              </div>
-
-              <button
-                onClick={onSave}
-                className="w-full px-4 py-4 rounded-2xl bg-[linear-gradient(135deg,#0369a1_0%,#0f172a_100%)] text-white hover:opacity-95 font-black text-base shadow-[0_16px_40px_rgba(3,105,161,0.25)]"
-              >
-                Entrar al panel
-              </button>
-
-              <p className="text-[12px] font-semibold text-slate-500 leading-relaxed">
-                Tu acceso se guarda solo en este navegador para agilizar la entrada.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DashboardView({ orgId, token, toast }) {
-  const [busy, setBusy] = useState(false);
+function FinanceSummary({ token, orgId, role }) {
   const [state, setState] = useState({
-    gross_orders_mxn: 0,
-    stripe_fee_mxn: 0,
-    envia_cost_mxn: 0,
-    net_real_mxn: 0,
-    net_shown_mxn: 0,
-    refunds_mxn: 0,
-    disputes: 0,
-    stripe: null,
-    envia: null,
-    updated_at: null,
+    loading: true,
+    error: "",
+    data: null,
   });
 
   const load = useCallback(async () => {
-    if (!supabase) {
-      toast?.({ type: "bad", text: "Supabase no está configurado." });
-      return;
-    }
-
-    setBusy(true);
+    if (!token || !orgId) return;
     try {
+      setState({ loading: true, error: "", data: null });
+      const res = await fetch(`/api/stripe/summary?org_id=${encodeURIComponent(orgId)}&days=30`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) throw new Error(data?.error || "No se pudo cargar resumen financiero.");
+      setState({ loading: false, error: "", data });
+    } catch (e) {
+      setState({ loading: false, error: String(e?.message || e), data: null });
+    }
+  }, [token, orgId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!["owner", "admin", "marketing"].includes(safeStr(role).toLowerCase())) return null;
+
+  if (state.loading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i} className="p-5 animate-pulse">
+            <div className="h-3 w-24 rounded bg-slate-200" />
+            <div className="mt-4 h-8 w-40 rounded bg-slate-200" />
+            <div className="mt-3 h-3 w-28 rounded bg-slate-200" />
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
+  if (state.error) {
+    return (
+      <EmptyState
+        icon={<Wallet size={20} />}
+        title="No pude cargar el resumen financiero"
+        text={state.error}
+        action={
+          <IconButton type="button" onClick={load} className="bg-slate-900 text-white hover:bg-slate-800">
+            <RefreshCcw size={16} />
+            Reintentar
+          </IconButton>
+        }
+      />
+    );
+  }
+
+  const kpi = state.data?.kpi || {};
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <MetricCard
+        icon={<PiggyBank size={20} />}
+        label="Ventas"
+        value={money(kpi.sales_mxn)}
+        sub="Últimos 30 días"
+        tone="blue"
+      />
+      <MetricCard
+        icon={<CreditCard size={20} />}
+        label="Comisión Stripe"
+        value={money(kpi.stripe_fee_mxn)}
+        sub="Cargos de pago"
+        tone="amber"
+      />
+      <MetricCard
+        icon={<Truck size={20} />}
+        label="Costo envíos"
+        value={money(kpi.envia_cost_mxn)}function DashboardView({ token, orgId, role }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [orders, setOrders] = useState([]);
+  const [enviaSummary, setEnviaSummary] = useState(null);
+  const mountedRef = useRef(true);
+
+  const load = useCallback(async () => {
+    if (!supabase || !orgId) return;
+    try {
+      setLoading(true);
+      setError("");
+
       const { data: orders, error: ordersErr } = await supabase
         .from("orders")
-        .select("id, amount_total_mxn, stripe_session_id, status, created_at")
-        .eq("organization_id", orgId)
+        .select("id, amount_total_mxn, stripe_session_id, status, created_at, org_id, organization_id")
+        .or(`org_id.eq.${orgId},organization_id.eq.${orgId}`)
         .in("status", ["paid", "fulfilled"])
         .order("created_at", { ascending: false })
         .limit(800);
 
       if (ordersErr) throw ordersErr;
 
-      const grossOrders = (orders || []).reduce((a, o) => a + num(o.amount_total_mxn), 0);
-
-      const stripeSessionIds = Array.from(
-        new Set((orders || []).map((o) => String(o?.stripe_session_id || "").trim()).filter(Boolean))
-      ).slice(0, 120);
-
-      let stripeFee = 0;
+      let enviaData = null;
       try {
-        const r = await fetch(`/api/stripe/fees`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            org_id: orgId,
-            stripe_session_ids: stripeSessionIds,
-          }),
+        const res = await fetch(`/api/envia/summary?org_id=${encodeURIComponent(orgId)}&days=30`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
-        const j = await r.json().catch(() => ({}));
-        if (r.ok && j?.ok) stripeFee = num(j.total_fee_mxn);
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data?.ok) enviaData = data;
       } catch {}
 
-      let stripe = null;
-      let refunds = 0;
-      let disputes = 0;
-      try {
-        const r = await fetch(`/api/stripe/summary?org_id=${encodeURIComponent(orgId)}&days=30`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const j = await r.json().catch(() => ({}));
-        if (r.ok && j?.ok) {
-          stripe = j;
-          refunds = num(j?.kpi?.refunded_mxn);
-          disputes = num(j?.kpi?.disputes);
-          if (!stripeFee) stripeFee = num(j?.kpi?.stripe_fee_mxn);
-        }
-      } catch {}
-
-      let envia = null;
-      let enviaCost = 0;
-      try {
-        const r = await fetch(`/api/envia/summary?org_id=${encodeURIComponent(orgId)}&days=30`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const j = await r.json().catch(() => ({}));
-        if (r.ok && j?.ok) {
-          envia = j;
-          enviaCost = num(j?.kpi?.envia_cost_mxn);
-        }
-      } catch {}
-
-      const netReal = Math.max(0, grossOrders - stripeFee - enviaCost);
-      const netShown = Math.max(0, netReal * 0.7);
-
-      setState({
-        gross_orders_mxn: grossOrders,
-        stripe_fee_mxn: stripeFee,
-        envia_cost_mxn: enviaCost,
-        net_real_mxn: netReal,
-        net_shown_mxn: netShown,
-        refunds_mxn: refunds,
-        disputes,
-        stripe,
-        envia,
-        updated_at: new Date().toISOString(),
-      });
+      if (!mountedRef.current) return;
+      setOrders(Array.isArray(orders) ? orders : []);
+      setEnviaSummary(enviaData);
     } catch (e) {
-      toast?.({ type: "bad", text: String(e?.message || e) });
+      if (!mountedRef.current) return;
+      setError(String(e?.message || e));
     } finally {
-      setBusy(false);
+      if (mountedRef.current) setLoading(false);
     }
-  }, [orgId, token, toast]);
+  }, [orgId, token]);
 
   useEffect(() => {
+    mountedRef.current = true;
     load();
+    return () => {
+      mountedRef.current = false;
+    };
   }, [load]);
 
+  const totalSales = useMemo(
+    () => (orders || []).reduce((acc, o) => acc + safeNum(o?.amount_total_mxn, 0), 0),
+    [orders]
+  );
+
+  const totalOrders = orders?.length || 0;
+  const fulfilled = (orders || []).filter((o) => safeStr(o?.status).toLowerCase() === "fulfilled").length;
+  const paid = (orders || []).filter((o) => safeStr(o?.status).toLowerCase() === "paid").length;
+
+  if (loading) return <LoadingShell label="Leyendo órdenes, pagos y envíos..." />;
+
+  if (error) {
+    return (
+      <EmptyState
+        icon={<Shield size={20} />}
+        title="No pude cargar el dashboard"
+        text={error}
+        action={
+          <IconButton type="button" onClick={load} className="bg-slate-900 text-white hover:bg-slate-800">
+            <RefreshCcw size={16} />
+            Reintentar
+          </IconButton>
+        }
+      />
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="rounded-[2rem] border border-sky-100 bg-white/95 shadow-[0_20px_60px_rgba(15,23,42,0.08)] p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700 flex items-center gap-2">
-                <Sparkles size={14} className="text-sky-700" /> Vista general
-              </p>
-              <HelpTip
-                title="Resumen general"
-                text="Aquí tienes una lectura rápida del rendimiento comercial y operativo de Score Store."
-              />
-            </div>
+    <div className="space-y-5">
+      <SectionTitle
+        eyebrow="Vista general"
+        title="Control operativo en tiempo real"
+        text="Aquí ves ventas, pagos, envíos y estado general sin tocar código."
+        action={<HelpTip title="Dashboard" text="Este bloque resume lo más importante del negocio con datos reales: ventas, volumen, envíos y actividad reciente." />}
+      />
 
-            <h3 className="mt-2 text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
-              {moneyMXN(state.net_shown_mxn)}
-            </h3>
+      <FinanceSummary token={token} orgId={orgId} role={role} />
 
-            <p className="text-sm font-semibold text-slate-600 mt-1">
-              Indicador principal del panel para seguimiento operativo.
-            </p>
-
-            <p className="text-xs font-semibold text-slate-500 mt-2">
-              Actualizado: {state.updated_at ? humanDate(state.updated_at) : "—"}
-            </p>
-          </div>
-
-          <button
-            onClick={load}
-            className="px-4 py-2 rounded-2xl border border-sky-100 bg-white hover:bg-sky-50 font-black text-sm flex items-center gap-2"
-          >
-            <RefreshCcw size={16} className={busy ? "animate-spin" : ""} /> Actualizar
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-6 mt-6 border-t border-slate-100">
-          <MiniKPI
-            label="Ventas"
-            value={moneyMXN(state.gross_orders_mxn)}
-            icon={<Wallet size={14} />}
-            note="Pedidos pagados"
-            helpText="Suma de pedidos en estado paid y fulfilled."
-          />
-          <MiniKPI
-            label="Costo Stripe"
-            value={moneyMXN(state.stripe_fee_mxn)}
-            icon={<CreditCard size={14} />}
-            note="Comisión real"
-            helpText="Comisiones obtenidas desde Stripe."
-          />
-          <MiniKPI
-            label="Costo Envía"
-            value={moneyMXN(state.envia_cost_mxn)}
-            icon={<Truck size={14} />}
-            note="Costo logístico"
-            helpText="Costo real tomado de guías registradas."
-          />
-          <MiniKPI
-            label="Neto interno"
-            value={moneyMXN(state.net_real_mxn)}
-            icon={<PiggyBank size={14} />}
-            note="Para control"
-            helpText="Resultado después de descontar Stripe y Envía."
-          />
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <MetricCard
+          icon={<Package size={20} />}
+          label="Pedidos pagados"
+          value={String(paid)}
+          sub="Listos para seguir flujo"
+          tone="blue"
+        />
+        <MetricCard
+          icon={<BadgeCheck size={20} />}
+          label="Pedidos enviados"
+          value={String(fulfilled)}
+          sub="Marcados como fulfilled"
+          tone="emerald"
+        />
+        <MetricCard
+          icon={<Activity size={20} />}
+          label="Pedidos totales"
+          value={String(totalOrders)}
+          sub="Ventana actual cargada"
+          tone="slate"
+        />
+        <MetricCard
+          icon={<Truck size={20} />}
+          label="Envíos"
+          value={String(safeNum(enviaSummary?.summary?.shipments_count, 0))}
+          sub={enviaSummary?.summary?.last_shipment_at ? `Último: ${shortDateTime(enviaSummary.summary.last_shipment_at)}` : "Sin últimos movimientos"}
+          tone="amber"
+        />
       </div>
 
-      <div className="rounded-[2rem] border border-sky-100 bg-white/95 shadow-[0_20px_60px_rgba(15,23,42,0.08)] p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700">
-                Cobros y balance
-              </p>
-              <HelpTip
-                title="Stripe"
-                text="Consulta en vivo balance disponible, payouts y movimientos recientes."
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+        <Card className="xl:col-span-2 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] font-black text-slate-500">Actividad reciente</p>
+              <h3 className="mt-1 text-lg font-black tracking-tight text-slate-900">Últimos pedidos</h3>
+            </div>
+            <div className="text-sm font-black text-slate-900">{compactMoney(totalSales)}</div>
+          </div>
+
+          {!orders.length ? (
+            <div className="mt-5">
+              <EmptyState
+                icon={<Package size={20} />}
+                title="Todavía no hay pedidos cargados"
+                text="Cuando entren ventas reales y estén marcadas como pagadas o enviadas, aparecerán aquí."
               />
             </div>
-            <h4 className="text-xl font-black text-slate-900 mt-1">Stripe en tiempo real</h4>
-            <p className="text-sm font-semibold text-slate-600">
-              Reembolsos 30d: {moneyMXN(state.refunds_mxn)} · Disputas: {state.disputes}
-            </p>
+          ) : (
+            <div className="mt-5 overflow-x-auto">
+              <table className="w-full min-w-[640px]">
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-[0.16em] text-slate-500">
+                    <th className="pb-3 font-black">Pedido</th>
+                    <th className="pb-3 font-black">Estado</th>
+                    <th className="pb-3 font-black">Monto</th>
+                    <th className="pb-3 font-black">Fecha</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.slice(0, 12).map((o) => {
+                    const status = safeStr(o?.status).toLowerCase();
+                    const ok = status === "fulfilled";
+                    return (
+                      <tr key={o.id} className="border-t border-slate-100">
+                        <td className="py-4 text-sm font-black text-slate-900">{safeStr(o.id).slice(0, 8)}...</td>
+                        <td className="py-4">
+                          <span
+                            className={clsx(
+                              "inline-flex rounded-full px-3 py-1 text-xs font-black",
+                              ok ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"
+                            )}
+                          >
+                            {status || "—"}
+                          </span>
+                        </td>
+                        <td className="py-4 text-sm font-black text-slate-900">{money(o?.amount_total_mxn)}</td>
+                        <td className="py-4 text-sm text-slate-500">{shortDateTime(o?.created_at)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-5">
+          <p className="text-xs uppercase tracking-[0.18em] font-black text-slate-500">Lectura rápida</p>
+          <h3 className="mt-1 text-lg font-black tracking-tight text-slate-900">Salud del sistema</h3>
+
+          <div className="mt-5 space-y-3">
+            <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-4">
+              <p className="text-sm font-black text-slate-900">Supabase</p>
+              <p className="mt-1 text-sm text-slate-500">Conexión activa para auth, órdenes, productos y settings.</p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-4">
+              <p className="text-sm font-black text-slate-900">Stripe</p>
+              <p className="mt-1 text-sm text-slate-500">Comisiones y pagos listos para leerse desde el panel.</p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-4">
+              <p className="text-sm font-black text-slate-900">Envia</p>
+              <p className="mt-1 text-sm text-slate-500">Resumen operativo conectado para seguimiento de envíos.</p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-4">
+              <p className="text-sm font-black text-slate-900">Permisos</p>
+              <p className="mt-1 text-sm text-slate-500">Rol actual detectado: {safeStr(role || "sin rol").toUpperCase()}.</p>
+            </div>
           </div>
-
-          <a
-            className="px-4 py-2 rounded-2xl border border-sky-100 bg-white hover:bg-sky-50 font-black text-sm inline-flex items-center gap-2"
-            href="https://dashboard.stripe.com/"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Abrir Stripe <ExternalLink size={16} />
-          </a>
-        </div>
-
-        <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="rounded-3xl border border-sky-100 bg-sky-50/40 p-4">
-            <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-              Balance disponible
-            </div>
-            <div className="mt-2 text-sm font-semibold text-slate-800 whitespace-pre-wrap">
-              {(state.stripe?.stripe_dashboard?.balance_available || [])
-                .map((x) => `${String(x.currency || "").toUpperCase()}: ${(num(x.amount || 0) / 100).toFixed(2)}`)
-                .join("\n") || "—"}
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-sky-100 bg-sky-50/40 p-4">
-            <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
-              Payouts recientes
-            </div>
-            <div className="mt-2 space-y-2">
-              {(state.stripe?.stripe_dashboard?.payouts || []).slice(0, 6).map((p) => (
-                <div key={p.id} className="flex items-center justify-between text-sm font-semibold">
-                  <span className="text-slate-800">
-                    {new Date((p.created || 0) * 1000).toLocaleDateString("es-MX")} · {String(p.status || "—")}
-                  </span>
-                  <span className="text-slate-900 font-black">
-                    {(num(p.amount || 0) / 100).toFixed(2)} {String(p.currency || "").toUpperCase()}
-                  </span>
-                </div>
-              ))}
-              {!(state.stripe?.stripe_dashboard?.payouts || []).length ? (
-                <div className="text-sm font-semibold text-slate-500">—</div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-[2rem] border border-sky-100 bg-white/95 shadow-[0_20px_60px_rgba(15,23,42,0.08)] p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700">
-                Logística
-              </p>
-              <HelpTip
-                title="Envía.com"
-                text="Este bloque te muestra el costo real de las guías registradas por tu operación."
-              />
-            </div>
-            <h4 className="text-xl font-black text-slate-900 mt-1">Envía.com y operación</h4>
-            <p className="text-sm font-semibold text-slate-600">
-              Costo total 30d: {moneyMXN(num(state.envia?.kpi?.envia_cost_mxn || state.envia_cost_mxn))}
-            </p>
-          </div>
-
-          <span className="px-4 py-2 rounded-2xl border border-sky-100 bg-white font-black text-sm inline-flex items-center gap-2">
-            <Truck size={16} /> {num(state.envia?.scope?.labels_count || 0)} guías
-          </span>
-        </div>
-
-        <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[900px]">
-            <thead>
-              <tr className="text-left text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-                <th className="py-2 pr-3">Fecha</th>
-                <th className="py-2 pr-3">Carrier</th>
-                <th className="py-2 pr-3">Tracking</th>
-                <th className="py-2 pr-3">Costo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(state.envia?.labels || []).slice(0, 14).map((r) => (
-                <tr key={r.id} className="border-t border-slate-100">
-                  <td className="py-3 pr-3 text-sm font-semibold text-slate-800">{humanDate(r.created_at)}</td>
-                  <td className="py-3 pr-3 text-sm font-black text-slate-900">{r.carrier || "—"}</td>
-                  <td className="py-3 pr-3 text-sm font-semibold text-slate-800">{r.tracking || "—"}</td>
-                  <td className="py-3 pr-3 text-sm font-black text-slate-900">{moneyMXN(num(r.total_amount_mxn))}</td>
-                </tr>
-              ))}
-              {!(state.envia?.labels || []).length ? (
-                <tr>
-                  <td colSpan={4} className="py-10 text-sm font-semibold text-slate-500">
-                    Aún no hay guías registradas en este periodo.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+        </Card>
       </div>
     </div>
   );
 }
-
-function ProductsView({ orgId, toast }) {
-  const [busy, setBusy] = useState(false);
+function ProductsView({ orgId }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState("");
 
   const load = useCallback(async () => {
-    if (!supabase) return;
-    setBusy(true);
+    if (!supabase || !orgId) return;
     try {
+      setLoading(true);
+      setError("");
+
       const { data, error } = await supabase
         .from("products")
-        .select("id,name,sku,price_mxn,stock,section_id,sub_section,rank,image_url,is_active,deleted_at")
-        .eq("organization_id", orgId)
+        .select("id,name,sku,price_mxn,stock,section_id,sub_section,rank,image_url,is_active,deleted_at,org_id,organization_id")
+        .or(`org_id.eq.${orgId},organization_id.eq.${orgId}`)
         .is("deleted_at", null)
         .order("rank", { ascending: true })
         .limit(800);
 
       if (error) throw error;
-      setRows(data || []);
+      setRows(Array.isArray(data) ? data : []);
     } catch (e) {
-      toast?.({ type: "bad", text: String(e?.message || e) });
+      setError(String(e?.message || e));
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
-  }, [orgId, toast]);
+  }, [orgId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   const filtered = useMemo(() => {
-    const s = String(q || "").trim().toLowerCase();
-    if (!s) return rows || [];
-    return (rows || []).filter((r) =>
-      `${r?.name || ""} ${r?.sku || ""} ${r?.section_id || ""} ${r?.sub_section || ""}`
-        .toLowerCase()
-        .includes(s)
+    const term = safeStr(q).toLowerCase().trim();
+    if (!term) return rows;
+    return rows.filter((r) =>
+      [r?.name, r?.sku, r?.section_id, r?.sub_section].some((x) => safeStr(x).toLowerCase().includes(term))
     );
   }, [rows, q]);
 
-  return (
-    <div className="rounded-[2rem] border border-sky-100 bg-white/95 shadow-[0_20px_60px_rgba(15,23,42,0.08)] p-6">
-      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700 mb-1">
-              Catálogo comercial
-            </p>
-            <HelpTip
-              title="Catálogo"
-              text="Aquí revisas cómo están cargados tus productos: nombre, precio, stock e imagen."
-            />
-          </div>
-          <h4 className="text-xl font-black text-slate-900">Productos de la tienda</h4>
-          <p className="text-sm font-semibold text-slate-600">
-            Tus imágenes cuadradas con fondo blanco se muestran limpias, nítidas y con look premium.
-          </p>
-        </div>
+  if (loading) return <LoadingShell label="Leyendo productos reales..." />;
 
-        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-          <div className="flex items-center gap-2 px-4 py-2 rounded-2xl border border-sky-100 bg-white">
-            <Search size={16} className="text-sky-700" />
+  if (error) {
+    return (
+      <EmptyState
+        icon={<Package size={20} />}
+        title="No pude cargar productos"
+        text={error}
+        action={
+          <IconButton type="button" onClick={load} className="bg-slate-900 text-white hover:bg-slate-800">
+            <RefreshCcw size={16} />
+            Reintentar
+          </IconButton>
+        }
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <SectionTitle
+        eyebrow="Catálogo"
+        title="Productos conectados"
+        text="Vista de catálogo real enlazada a Supabase para revisar precio, stock y estado."
+        action={<HelpTip title="Productos" text="Aquí se listan los productos reales detectados para la organización activa. Sirve para revisión rápida sin editar código." />}
+      />
+
+      <Card className="p-4 md:p-5">
+        <div className="flex flex-col md:flex-row md:items-center gap-3">
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar producto, SKU o sección"
-              className="outline-none text-sm font-semibold text-slate-800 w-[240px] max-w-full"
+              placeholder="Buscar por nombre, SKU o sección"
+              className="w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
             />
           </div>
 
-          <button
-            onClick={load}
-            className="px-4 py-2 rounded-2xl border border-sky-100 bg-white hover:bg-sky-50 font-black text-sm flex items-center gap-2"
-          >
-            <RefreshCcw size={16} className={busy ? "animate-spin" : ""} /> Actualizar
-          </button>
+          <IconButton type="button" onClick={load} className="bg-white text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50">
+            <RefreshCcw size={16} />
+            Actualizar
+          </IconButton>
         </div>
-      </div>
 
-      <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-[1050px]">
-          <thead>
-            <tr className="text-left text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-              <th className="py-2 pr-3">Producto</th>
-              <th className="py-2 pr-3">SKU</th>
-              <th className="py-2 pr-3">Sección</th>
-              <th className="py-2 pr-3">Sub</th>
-              <th className="py-2 pr-3">Precio</th>
-              <th className="py-2 pr-3">Stock</th>
-              <th className="py-2 pr-3">Activo</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(filtered || []).slice(0, 120).map((r) => (
-              <tr key={r.id} className="border-t border-slate-100">
-                <td className="py-3 pr-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-12 h-12 rounded-2xl border border-sky-100 bg-white overflow-hidden flex items-center justify-center shadow-sm p-1.5">
-                      {r?.image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={r.image_url} alt={r.name || "Producto"} className="w-full h-full object-contain bg-white" />
-                      ) : (
-                        <span className="text-xs font-black text-slate-400">IMG</span>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-black text-slate-900 truncate">{r?.name || "—"}</p>
-                      <p className="text-xs font-semibold text-slate-500 truncate">Rank: {String(r?.rank ?? "—")}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="py-3 pr-3 text-sm font-black text-slate-900">{r?.sku || "—"}</td>
-                <td className="py-3 pr-3 text-sm font-black text-slate-900">{r?.section_id || "—"}</td>
-                <td className="py-3 pr-3 text-sm font-black text-slate-900">{r?.sub_section || "—"}</td>
-                <td className="py-3 pr-3 text-sm font-black text-slate-900">{moneyMXN(r?.price_mxn || 0)}</td>
-                <td className="py-3 pr-3 text-sm font-black text-slate-900">{Number(r?.stock ?? 0)}</td>
-                <td className="py-3 pr-3">
-                  <span
-                    className={clsx(
-                      "inline-flex items-center px-3 py-1 rounded-full text-[11px] font-black",
-                      r?.is_active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
-                    )}
-                  >
-                    {r?.is_active ? "Sí" : "No"}
-                  </span>
-                </td>
-              </tr>
-            ))}
-            {!filtered?.length ? (
-              <tr>
-                <td colSpan={7} className="py-10">
-                  <p className="text-sm font-semibold text-slate-500">No encontramos productos con ese filtro.</p>
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+        {!filtered.length ? (
+          <div className="mt-5">
+            <EmptyState
+              icon={<Package size={20} />}
+              title="No encontré productos"
+              text="No hay productos para esta organización o el filtro actual no devolvió resultados."
+            />
+          </div>
+        ) : (
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[900px]">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-[0.16em] text-slate-500">
+                  <th className="pb-3 font-black">Producto</th>
+                  <th className="pb-3 font-black">SKU</th>
+                  <th className="pb-3 font-black">Precio</th>
+                  <th className="pb-3 font-black">Stock</th>
+                  <th className="pb-3 font-black">Sección</th>
+                  <th className="pb-3 font-black">Activo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r) => (
+                  <tr key={r.id} className="border-t border-slate-100">
+                    <td className="py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="h-12 w-12 rounded-2xl bg-slate-100 ring-1 ring-slate-200 overflow-hidden shrink-0">
+                          {r?.image_url ? (
+                            <img src={r.image_url} alt={r?.name || "Producto"} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="h-full w-full flex items-center justify-center text-slate-400">
+                              <Package size={18} />
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-sm font-black text-slate-900">{safeStr(r?.name, "Sin nombre")}</p>
+                          <p className="text-xs text-slate-500">Rank: {safeNum(r?.rank, 0)}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-4 text-sm font-semibold text-slate-600">{safeStr(r?.sku, "—")}</td>
+                    <td className="py-4 text-sm font-black text-slate-900">{money(r?.price_mxn)}</td>
+                    <td className="py-4 text-sm font-semibold text-slate-600">{safeNum(r?.stock, 0)}</td>
+                    <td className="py-4 text-sm font-semibold text-slate-600">
+                      {safeStr(r?.section_id, "—")}
+                      {r?.sub_section ? ` / ${r.sub_section}` : ""}
+                    </td>
+                    <td className="py-4">
+                      <span
+                        className={clsx(
+                          "inline-flex rounded-full px-3 py-1 text-xs font-black",
+                          r?.is_active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
+                        )}
+                      >
+                        {r?.is_active ? "Sí" : "No"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
 
-function SiteSettingsView({ orgId, canWrite, toast }) {
-  const [busy, setBusy] = useState(false);
-  const [row, setRow] = useState(null);
+function SettingsShortcut() {
+  return (
+    <div className="space-y-5">
+      <SectionTitle
+        eyebrow="Ajustes"
+        title="Centro de configuración"
+        text="Accesos rápidos para editar el comportamiento y el contenido visible de la tienda."
+        action={<HelpTip title="Ajustes" text="Desde aquí puedes saltar a páginas de configuración específicas sin tocar archivos manualmente." />}
+      />
 
-  const [form, setForm] = useState({
-    promo_active: false,
-    promo_text: "",
-    pixel_id: "",
-    maintenance_mode: false,
-    season_key: "default",
-    theme_json: "{}",
-    home_json: "{}",
-    socials_json: "{}",
-    contact_email: "",
-  });
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <Card className="p-5">
+          <p className="text-xs uppercase tracking-[0.18em] font-black text-blue-700">Score Store</p>
+          <h3 className="mt-1 text-lg font-black tracking-tight text-slate-900">Contenido y datos de tienda</h3>
+          <p className="mt-2 text-sm text-slate-500">
+            Edita hero, contacto, SEO, portada, gallery y nota de footer desde el panel dedicado.
+          </p>
+          <a
+            href="/scorestore-settings"
+            className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white hover:bg-slate-800"
+          >
+            Abrir ajustes
+            <ExternalLink size={16} />
+          </a>
+        </Card>
 
-  const load = useCallback(async () => {
-    if (!supabase) return;
-    setBusy(true);
-    try {
-      const { data, error } = await supabase
-        .from("site_settings")
-        .select("id, org_id, organization_id, promo_active, promo_text, pixel_id, maintenance_mode, season_key, theme, home, socials, contact_email, updated_at, created_at")
-        .or(`org_id.eq.${orgId},organization_id.eq.${orgId}`)
-        .order("updated_at", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        <Card className="p-5">
+          <p className="text-xs uppercase tracking-[0.18em] font-black text-blue-700">Estado actual</p>
+          <h3 className="mt-1 text-lg font-black tracking-tight text-slate-900">Producción conectada</h3>
+          <p className="mt-2 text-sm text-slate-500">
+            El panel ya está enlazado a autenticación, productos, órdenes, pagos y envíos con lectura real.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <HealthPill ok label="Auth" />
+            <HealthPill ok label="Store settings" />
+            <HealthPill ok label="Orders" />
+            <HealthPill ok label="Products" />
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}export default function UnicOsHomePage() {
+  const mounted = useMounted();
 
-      if (error) throw error;
-      setRow(data || null);
+  const [checking, setChecking] = useState(true);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [globalError, setGlobalError] = useState("");
+  const [sessionEmail, setSessionEmail] = useState("");
+  const [accessToken, setAccessToken] = useState("");
+  const [activeOrgId, setActiveOrgId] = useState("");
+  const [activeOrgName, setActiveOrgName] = useState("");
+  const [role, setRole] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [currentTab, setCurrentTab] = useState("dashboard");
 
-      setForm({
-        promo_active: !!data?.promo_active,
-        promo_text: data?.promo_text || "",
-        pixel_id: data?.pixel_id || "",
-        maintenance_mode: !!data?.maintenance_mode,
-        season_key: data?.season_key || "default",
-        theme_json: JSON.stringify(data?.theme ?? {}, null, 2),
-        home_json: JSON.stringify(data?.home ?? {}, null, 2),
-        socials_json: JSON.stringify(data?.socials ?? {}, null, 2),
-        contact_email: data?.contact_email || "",
-      });
-    } catch (e) {
-      toast?.({ type: "bad", text: String(e?.message || e) });
-    } finally {
-      setBusy(false);
+  const loadSessionAndOrg = useCallback(async () => {
+    if (!supabase) {
+      setGlobalError("Faltan NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+      setChecking(false);
+      return;
     }
-  }, [orgId, toast]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const save = async () => {
-    if (!canWrite) return toast?.({ type: "bad", text: "No tienes permisos para editar esta sección." });
-    setBusy(true);
     try {
-      const payload = {
-        org_id: orgId,
-        organization_id: orgId,
-        promo_active: !!form.promo_active,
-        promo_text: String(form.promo_text || "").trim() || null,
-        pixel_id: String(form.pixel_id || "").trim() || null,
-        maintenance_mode: !!form.maintenance_mode,
-        season_key: String(form.season_key || "default").trim() || "default",
-        theme: JSON.parse(form.theme_json || "{}"),
-        home: JSON.parse(form.home_json || "{}"),
-        socials: JSON.parse(form.socials_json || "{}"),
-        contact_email: String(form.contact_email || "").trim() || null,
-        updated_at: new Date().toISOString(),
-      };
+      setChecking(true);
+      setGlobalError("");
 
-      if (row?.id) {
-        const { error } = await supabase.from("site_settings").update(payload).eq("id", row.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("site_settings").insert({
-          ...payload,
-          created_at: new Date().toISOString(),
-        });
-        if (error) throw error;
+      const {
+        data: { session },
+        error: sessionErr,
+      } = await supabase.auth.getSession();
+
+      if (sessionErr) throw sessionErr;
+
+      if (!session?.access_token || !session?.user) {
+        setAccessToken("");
+        setSessionEmail("");
+        setActiveOrgId("");
+        setActiveOrgName("");
+        setRole("");
+        setChecking(false);
+        return;
       }
 
-      toast?.({ type: "ok", text: "Configuración guardada correctamente." });
-      load();
+      setAccessToken(session.access_token);
+
+      const token = session.access_token;
+      const storedOrg = mounted ? safeStr(window.localStorage.getItem("unicos.org_id"), "") : "";
+
+      const resolveOrg = async () => {
+        const whoRes = await fetch("/api/me", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const who = await whoRes.json().catch(() => ({}));
+        if (!whoRes.ok || !who?.ok) throw new Error(who?.error || "No autorizado.");
+
+        const email = safeStr(who.email || "");
+        if (email) setSessionEmail(email);
+
+        const orgs = Array.isArray(who?.organizations) ? who.organizations : [];
+        let targetOrg = storedOrg || String(who?.organization_id || "").trim();
+
+        if (!targetOrg && orgs.length) {
+          targetOrg = String(orgs[0]?.organization_id || "").trim();
+        }
+
+        if (!targetOrg) {
+          const { data: rows, error } = await supabase
+            .from("admin_users")
+            .select("organization_id, org_id, role, is_active, email")
+            .eq("is_active", true)
+            .ilike("email", email)
+            .order("created_at", { ascending: true })
+            .limit(10);
+
+          if (error) throw error;
+          const row = (rows || []).find((x) => x?.organization_id || x?.org_id);
+          targetOrg = row?.organization_id || row?.org_id || "";
+          if (!targetOrg) throw new Error("No encontramos una organización ligada a este acceso.");
+        }
+
+        let orgName = ORG_LABELS[targetOrg] || "Organización";
+        try {
+          const { data: orgRow } = await supabase
+            .from("organizations")
+            .select("id,name")
+            .eq("id", targetOrg)
+            .limit(1)
+            .maybeSingle();
+          if (orgRow?.name) orgName = orgRow.name;
+        } catch {}
+
+        let adminRow = null;
+
+        const q1 = await supabase
+          .from("admin_users")
+          .select("id, role, is_active, email, user_id, organization_id, org_id")
+          .eq("is_active", true)
+          .or(`organization_id.eq.${targetOrg},org_id.eq.${targetOrg}`)
+          .or(`email.ilike.${email},user_id.eq.${who.id}`)
+          .limit(10);
+
+        if (!q1.error && Array.isArray(q1.data)) {
+          adminRow =
+            q1.data.find((r) => String(r?.organization_id || r?.org_id || "") === String(targetOrg)) ||
+            q1.data[0] ||
+            null;
+        }
+
+        if (!adminRow?.role) {
+          throw new Error("No encontramos permisos activos para esta organización.");
+        }
+
+        setActiveOrgId(targetOrg);
+        setActiveOrgName(orgName);
+        setRole(safeStr(adminRow.role).toLowerCase());
+        if (mounted) window.localStorage.setItem("unicos.org_id", targetOrg);
+      };
+
+      await resolveOrg();
     } catch (e) {
-      toast?.({ type: "bad", text: `No se pudo guardar: ${String(e?.message || e)}` });
+      setGlobalError(String(e?.message || e));
     } finally {
-      setBusy(false);
+      setChecking(false);
     }
-  };
+  }, [mounted]);
 
-  return (
-    <div className="rounded-[2rem] border border-sky-100 bg-white/95 shadow-[0_20px_60px_rgba(15,23,42,0.08)] p-6 space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700 mb-1">
-              Configuración comercial
-            </p>
-            <HelpTip
-              title="Configuración"
-              text="Aquí ajustas promos, mantenimiento, pixel y detalles globales que la tienda puede consumir."
-            />
-          </div>
-          <h4 className="text-xl font-black text-slate-900">Ajustes de la tienda</h4>
-          <p className="text-sm font-semibold text-slate-600">
-            Mantén al día mensajes, campañas y detalles visuales sin tocar código.
-          </p>
-        </div>
+  useEffect(() => {
+    loadSessionAndOrg();
 
-        <button
-          onClick={save}
-          disabled={!canWrite || busy}
-          className={clsx(
-            "px-4 py-2 rounded-2xl font-black text-sm inline-flex items-center gap-2",
-            canWrite && !busy
-              ? "bg-[linear-gradient(135deg,#0369a1_0%,#0f172a_100%)] text-white hover:opacity-95"
-              : "bg-slate-200 text-slate-500 cursor-not-allowed"
-          )}
-        >
-          <Check size={16} /> Guardar
-        </button>
-      </div>
+    if (!supabase) return;
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="md:col-span-2 rounded-3xl border border-sky-100 bg-sky-50/40 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-black text-slate-900">Mensaje promocional</div>
-            <HelpTip title="Promoción" text="Activa una barra superior con una promoción o aviso clave." />
-          </div>
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      loadSessionAndOrg();
+    });
 
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label className="flex items-center gap-2 text-sm font-black text-slate-800">
-              <input
-                type="checkbox"
-                checked={!!form.promo_active}
-                onChange={(e) => setForm((p) => ({ ...p, promo_active: e.target.checked }))}
-                className="w-4 h-4"
-              />
-              Mostrar promoción
-            </label>
+    return () => subscription?.unsubscribe?.();
+  }, [loadSessionAndOrg]);
 
-            <input
-              value={form.promo_text}
-              onChange={(e) => setForm((p) => ({ ...p, promo_text: e.target.value }))}
-              className="px-4 py-3 rounded-2xl border border-slate-200 bg-white font-semibold text-slate-900 outline-none md:col-span-2"
-              placeholder="Ej: Envío gratis en compras arriba de $999"
-            />
-          </div>
-        </div>
+  const handleLogin = useCallback(async () => {
+    if (!supabase) return;
+    try {
+      setAuthLoading(true);
+      setGlobalError("");
 
-        <div>
-          <label className="text-xs font-black text-slate-700">Temporada</label>
-          <input
-            value={form.season_key}
-            onChange={(e) => setForm((p) => ({ ...p, season_key: e.target.value }))}
-            className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 font-semibold text-slate-900 outline-none"
-            placeholder="default | navidad | verano"
-          />
-        </div>
+      const email = window.prompt("Escribe tu correo autorizado de UnicOs:");
+      if (!email) return;
 
-        <div>
-          <label className="text-xs font-black text-slate-700">Correo de contacto</label>
-          <input
-            value={form.contact_email}
-            onChange={(e) => setForm((p) => ({ ...p, contact_email: e.target.value }))}
-            className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 font-semibold text-slate-900 outline-none"
-            placeholder="ventas@empresa.com"
-          />
-        </div>
+      const origin =
+        typeof window !== "undefined" && window.location?.origin
+          ? window.location.origin
+          : "http://localhost:3000";
 
-        <div>
-          <label className="text-xs font-black text-slate-700">Pixel Meta</label>
-          <input
-            value={form.pixel_id}
-            onChange={(e) => setForm((p) => ({ ...p, pixel_id: e.target.value }))}
-            className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 font-semibold text-slate-900 outline-none"
-            placeholder="Ej: 1234567890"
-          />
-        </div>
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: `${origin}/`,
+        },
+      });
 
-        <div className="rounded-3xl border border-sky-100 bg-sky-50/40 p-4">
-          <div className="text-sm font-black text-slate-900">Modo mantenimiento</div>
-          <label className="mt-3 flex items-center gap-2 text-sm font-black text-slate-800">
-            <input
-              type="checkbox"
-              checked={!!form.maintenance_mode}
-              onChange={(e) => setForm((p) => ({ ...p, maintenance_mode: e.target.checked }))}
-              className="w-4 h-4"
-            />
-            Bloquear compras temporalmente
-          </label>
-        </div>
+      if (error) throw error;
+      alert("Te mandé tu magic link al correo.");
+    } catch (e) {
+      setGlobalError(String(e?.message || e));
+    } finally {
+      setAuthLoading(false);
+    }
+  }, []);
 
-        <div>
-          <label className="text-xs font-black text-slate-700">theme (JSON)</label>
-          <textarea
-            value={form.theme_json}
-            onChange={(e) => setForm((p) => ({ ...p, theme_json: e.target.value }))}
-            rows={8}
-            className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 font-mono text-xs font-semibold text-slate-900 outline-none"
-          />
-        </div>
-
-        <div>
-          <label className="text-xs font-black text-slate-700">home (JSON)</label>
-          <textarea
-            value={form.home_json}
-            onChange={(e) => setForm((p) => ({ ...p, home_json: e.target.value }))}
-            rows={8}
-            className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 font-mono text-xs font-semibold text-slate-900 outline-none"
-          />
-        </div>
-
-        <div className="md:col-span-2">
-          <label className="text-xs font-black text-slate-700">socials (JSON)</label>
-          <textarea
-            value={form.socials_json}
-            onChange={(e) => setForm((p) => ({ ...p, socials_json: e.target.value }))}
-            rows={6}
-            className="mt-1 w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 font-mono text-xs font-semibold text-slate-900 outline-none"
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function OpsView({ orgId }) {
-  return (
-    <div className="rounded-[2rem] border border-sky-100 bg-white/95 shadow-[0_20px_60px_rgba(15,23,42,0.08)] p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700 mb-1">
-            Operación
-          </p>
-          <h4 className="text-xl font-black text-slate-900">Seguimiento operativo</h4>
-          <p className="text-sm font-semibold text-slate-600">
-            Aquí puedes crecer tracking, fulfillment y seguimiento por pedido.
-          </p>
-        </div>
-        <HelpTip
-          title="Operación"
-          text="Este bloque se puede ampliar con seguimiento por pedido, guía y estatus de entrega."
-        />
-      </div>
-
-      <div className="mt-6 rounded-3xl border border-sky-100 bg-sky-50/40 p-4">
-        <p className="text-sm font-semibold text-slate-700">
-          Organización activa: <span className="font-black">{orgId}</span>
-        </p>
-      </div>
+  const handleLogout = useCallback(async () => {
+    try {
+      if (!supabase) return;
+      await supabase.auth.signOut();
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("unicos.org_id");
+      }
+      setAccessToken("");
+      setSessionEmail("");
+      setActiveOrgId("");
+      setActiveOrgName("");
+      setRole("");
+      setCurrentTab("dashboard");
+    } catch (e) {
+      setGlobalError(String(e?.message || e));
+    }
+  }, []);
+  
+        sub="Costo operativo"
+        tone="slate"
+      />
+      <MetricCard
+        icon={<Wallet size={20} />}
+        label="Ganancia"
+        value={money(kpi.visible_profit_mxn)}
+        sub="Lectura simple del panel"
+        tone="emerald"
+      />
     </div>
   );
 }
