@@ -1,14 +1,18 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import clsx from "clsx";
 import Image from "next/image";
+import clsx from "clsx";
 import {
   Activity,
+  ArrowRight,
   BadgeCheck,
+  BarChart3,
+  Boxes,
   CreditCard,
   ExternalLink,
   HelpCircle,
+  LayoutDashboard,
   Lock,
   Package,
   PiggyBank,
@@ -16,42 +20,20 @@ import {
   Search,
   Settings,
   Shield,
+  Sparkles,
+  Store,
   Truck,
   Wallet,
-  BarChart3,
 } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
+import { supabase, SUPABASE_CONFIGURED } from "@/lib/supabase";
 
-/* =========================================================
-   Supabase client
-   ========================================================= */
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-
-const supabase =
-  SUPABASE_URL && SUPABASE_ANON_KEY
-    ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: { persistSession: true, autoRefreshToken: true },
-      })
-    : null;
-
-const SUPABASE_READY = !!supabase;
-
-/* =========================================================
-   Const / helpers
-   ========================================================= */
 const SCORE_ORG_ID = "1f3b9980-a1c5-4557-b4eb-a75bb9a8aaa6";
 
-const ORG_LABELS = {
-  [SCORE_ORG_ID]: "Score Store",
-};
-
+const safeStr = (v, d = "") => (typeof v === "string" ? v : v == null ? d : String(v));
 const safeNum = (v, d = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : d;
 };
-
-const safeStr = (v, d = "") => (typeof v === "string" ? v : v == null ? d : String(v));
 
 const money = (v) =>
   new Intl.NumberFormat("es-MX", {
@@ -80,32 +62,48 @@ const shortDateTime = (value) => {
 
 function useMounted() {
   const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  useEffect(() => setMounted(true), []);
   return mounted;
 }
 
-function HealthPill({ ok, label }) {
+function StatusPill({ ok = true, children, tone = "blue" }) {
+  const tones = {
+    blue: ok
+      ? "bg-[rgba(42,168,255,0.14)] text-sky-200 border-white/10"
+      : "bg-[rgba(245,158,11,0.16)] text-amber-200 border-white/10",
+    emerald: ok
+      ? "bg-[rgba(34,197,94,0.14)] text-emerald-200 border-white/10"
+      : "bg-[rgba(245,158,11,0.16)] text-amber-200 border-white/10",
+    rose: ok
+      ? "bg-[rgba(251,113,133,0.14)] text-rose-200 border-white/10"
+      : "bg-[rgba(245,158,11,0.16)] text-amber-200 border-white/10",
+  };
+
   return (
     <span
       className={clsx(
-        "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black",
-        ok ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.16em]",
+        tones[tone]
       )}
     >
-      <span className={clsx("h-2.5 w-2.5 rounded-full", ok ? "bg-emerald-500" : "bg-amber-500")} />
-      {label}
+      <span
+        className={clsx(
+          "h-2.5 w-2.5 rounded-full",
+          ok ? "bg-sky-400 animate-unicos-pulse" : "bg-amber-400"
+        )}
+      />
+      {children}
     </span>
   );
 }
 
-function IconButton({ children, className = "", ...props }) {
+function GlassButton({ children, className = "", variant = "secondary", ...props }) {
   return (
     <button
       {...props}
       className={clsx(
-        "inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-black transition active:scale-[0.99]",
+        "unicos-btn inline-flex items-center justify-center gap-2 px-4 py-3 text-sm",
+        variant === "primary" ? "unicos-btn-primary" : "unicos-btn-secondary",
         className
       )}
     >
@@ -114,98 +112,53 @@ function IconButton({ children, className = "", ...props }) {
   );
 }
 
+function Panel({ className = "", children }) {
+  return <div className={clsx("unicos-panel", className)}>{children}</div>;
+}
+
 function Card({ className = "", children }) {
-  return <div className={clsx("rounded-[28px] border border-slate-200 bg-white shadow-sm", className)}>{children}</div>;
+  return <div className={clsx("unicos-card", className)}>{children}</div>;
 }
 
-function SectionTitle({ eyebrow, title, text, action }) {
+function SectionHeading({ eyebrow, title, text, action }) {
   return (
-    <div className="flex items-start justify-between gap-4">
+    <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
       <div>
-        {eyebrow ? <p className="text-[11px] font-black uppercase tracking-[0.22em] text-blue-700">{eyebrow}</p> : null}
-        <h2 className="mt-1 text-xl md:text-2xl font-black tracking-tight text-slate-900">{title}</h2>
-        {text ? <p className="mt-2 text-sm md:text-[15px] text-slate-500 max-w-3xl">{text}</p> : null}
+        {eyebrow ? (
+          <p className="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-300">{eyebrow}</p>
+        ) : null}
+        <h2 className="unicos-title mt-2 text-2xl md:text-3xl font-black">{title}</h2>
+        {text ? <p className="mt-2 max-w-3xl text-sm md:text-[15px] text-slate-300">{text}</p> : null}
       </div>
-      {action ? <div className="shrink-0">{action}</div> : null}
-    </div>
-  );
-}
-
-function MetricCard({ icon, label, value, sub, tone = "slate" }) {
-  const tones = {
-    slate: "bg-slate-50 text-slate-700 ring-slate-200",
-    emerald: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-    blue: "bg-blue-50 text-blue-700 ring-blue-200",
-    amber: "bg-amber-50 text-amber-700 ring-amber-200",
-    rose: "bg-rose-50 text-rose-700 ring-rose-200",
-  };
-  return (
-    <Card className="p-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.18em] font-black text-slate-500">{label}</p>
-          <p className="mt-2 text-2xl md:text-[28px] font-black tracking-tight text-slate-900">{value}</p>
-          {sub ? <p className="mt-2 text-xs font-semibold text-slate-500">{sub}</p> : null}
-        </div>
-        <div className={clsx("h-12 w-12 rounded-2xl ring-1 flex items-center justify-center", tones[tone])}>{icon}</div>
-      </div>
-    </Card>
-  );
-}
-
-function EmptyState({ icon, title, text, action }) {
-  return (
-    <Card className="p-8">
-      <div className="flex flex-col items-center text-center">
-        <div className="h-14 w-14 rounded-2xl bg-slate-100 text-slate-600 flex items-center justify-center">{icon}</div>
-        <p className="mt-4 text-lg font-black tracking-tight text-slate-900">{title}</p>
-        <p className="mt-2 text-sm text-slate-500 max-w-lg">{text}</p>
-        {action ? <div className="mt-5">{action}</div> : null}
-      </div>
-    </Card>
-  );
-}
-
-function LoadingShell({ label = "Cargando datos reales..." }) {
-  return (
-    <div className="min-h-[45vh] flex items-center justify-center">
-      <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm p-8 w-full max-w-md">
-        <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-2xl bg-blue-50 text-blue-700 ring-1 ring-blue-200 flex items-center justify-center">
-            <RefreshCcw className="animate-spin" size={18} />
-          </div>
-          <div>
-            <p className="text-base font-black text-slate-900">UnicOs</p>
-            <p className="text-sm text-slate-500">{label}</p>
-          </div>
-        </div>
-      </div>
+      {action ? <div>{action}</div> : null}
     </div>
   );
 }
 
 function HelpTip({ title, text }) {
   const [open, setOpen] = useState(false);
+
   return (
     <div className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="h-9 w-9 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center"
+        className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
         aria-label={title || "Ayuda"}
         title={title || "Ayuda"}
       >
         <HelpCircle size={16} />
       </button>
+
       {open ? (
-        <div className="absolute right-0 top-11 z-[60] w-[320px] max-w-[88vw]">
-          <div className="rounded-[24px] border border-slate-200 bg-white shadow-2xl p-4">
-            <p className="text-sm font-black text-slate-900">{title}</p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-600">{text}</p>
+        <div className="absolute right-0 top-12 z-[80] w-[340px] max-w-[88vw]">
+          <div className="rounded-3xl border border-white/10 bg-[rgba(6,14,28,0.96)] p-4 shadow-2xl backdrop-blur-xl">
+            <p className="text-sm font-black text-white">{title}</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-300">{text}</p>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              className="mt-4 rounded-2xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-800"
+              className="mt-4 rounded-2xl bg-white/10 px-4 py-2 text-xs font-black text-white hover:bg-white/15"
             >
               Cerrar
             </button>
@@ -215,227 +168,349 @@ function HelpTip({ title, text }) {
     </div>
   );
 }
-function TopShell({ orgName, onRefresh, refreshing, onOpenSettings, currentTab, setCurrentTab }) {
-  const tabs = [
-    { key: "dashboard", label: "Dashboard", icon: <BarChart3 size={16} /> },
-    { key: "products", label: "Productos", icon: <Package size={16} /> },
-    { key: "settings", label: "Ajustes", icon: <Settings size={16} /> },
-  ];
 
+function LoadingShell({ label = "Cargando datos reales..." }) {
   return (
-    <Card className="p-4 md:p-5 sticky top-3 z-30 backdrop-blur supports-[backdrop-filter]:bg-white/90">
-      <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-        <div className="flex items-center gap-4 min-w-0">
-          <div className="relative h-12 w-12 rounded-2xl bg-slate-100 ring-1 ring-slate-200 overflow-hidden shrink-0">
-            <Image
-              src="/logo-unico.png"
-              alt="UnicOs"
-              fill
-              className="object-contain p-1.5"
-              sizes="44px"
-              priority
-            />
+    <div className="flex min-h-[48vh] items-center justify-center">
+      <Panel className="max-w-lg w-full p-8">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-[rgba(42,168,255,0.14)] text-sky-300 border border-white/10">
+            <RefreshCcw className="animate-spin" size={20} />
           </div>
-          <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-[0.22em] font-black text-blue-700">Panel maestro</p>
-            <h1 className="truncate text-xl md:text-2xl font-black tracking-tight text-slate-900">UnicOs</h1>
-            <p className="truncate text-sm text-slate-500">{orgName || "Sin organización activa"}</p>
+          <div>
+            <p className="text-lg font-black text-white">UnicOs</p>
+            <p className="text-sm text-slate-300">{label}</p>
           </div>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 rounded-2xl bg-slate-50 p-1 ring-1 ring-slate-200">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setCurrentTab(tab.key)}
-                className={clsx(
-                  "inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-black transition",
-                  currentTab === tab.key
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-white hover:text-slate-900"
-                )}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          <IconButton
-            type="button"
-            onClick={onOpenSettings}
-            className="bg-white text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50"
-          >
-            <Settings size={16} />
-            Ajustes
-          </IconButton>
-
-          <IconButton
-            type="button"
-            onClick={onRefresh}
-            className="bg-blue-700 text-white hover:bg-blue-800"
-          >
-            <RefreshCcw size={16} className={refreshing ? "animate-spin" : ""} />
-            Actualizar
-          </IconButton>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function HeaderBar({ orgName, role, email, onLogout }) {
-  return (
-    <Card className="p-4 md:p-5">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div className="flex items-center gap-4 min-w-0">
-          <div className="relative h-14 w-14 rounded-2xl bg-slate-100 ring-1 ring-slate-200 overflow-hidden shrink-0">
-            <Image
-              src="/logo-unico.png"
-              alt="UnicOs"
-              fill
-              className="object-contain p-2"
-              sizes="56px"
-              priority
-            />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-[0.22em] font-black text-blue-700">Producción conectada</p>
-            <h2 className="text-lg md:text-xl font-black tracking-tight text-slate-900 truncate">{orgName || "Sin organización"}</h2>
-            <p className="text-sm text-slate-500 truncate">
-              {email || "Sin correo"} · {safeStr(role || "sin rol").toUpperCase()}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <HealthPill ok={SUPABASE_READY} label="Supabase" />
-          <HealthPill ok label="Stripe" />
-          <HealthPill ok label="Envia" />
-          <HealthPill ok label="IA" />
-
-          <IconButton
-            type="button"
-            onClick={onLogout}
-            className="bg-white text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50"
-          >
-            <Lock size={16} />
-            Salir
-          </IconButton>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function LoginCard({ onLogin, loading, error }) {
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 px-4 py-8 flex items-center justify-center">
-      <div className="w-full max-w-lg">
-        <Card className="p-6 md:p-8">
-          <div className="flex items-center gap-4">
-            <div className="relative h-14 w-14 rounded-2xl bg-slate-100 ring-1 ring-slate-200 overflow-hidden">
-              <Image src="/logo-unico.png" alt="UnicOs" fill className="object-contain p-2" sizes="56px" priority />
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.22em] font-black text-blue-700">Control total</p>
-              <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900">UnicOs</h1>
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-[24px] bg-slate-50 ring-1 ring-slate-200 p-5">
-            <p className="text-base font-black text-slate-900">Acceso al panel maestro</p>
-            <p className="mt-2 text-sm text-slate-500">
-              Entra con tu acceso real de Supabase para administrar Score Store desde UnicOs.
-            </p>
-
-            {error ? (
-              <div className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 ring-1 ring-rose-200">
-                {error}
-              </div>
-            ) : null}
-
-            <button
-              type="button"
-              disabled={loading}
-              onClick={onLogin}
-              className={clsx(
-                "mt-5 w-full rounded-2xl px-4 py-3 text-sm font-black text-white transition",
-                loading ? "bg-slate-400" : "bg-blue-700 hover:bg-blue-800"
-              )}
-            >
-              {loading ? "Entrando..." : "Entrar con magic link"}
-            </button>
-          </div>
-        </Card>
-      </div>
+      </Panel>
     </div>
   );
 }
 
+function EmptyState({ icon, title, text, action }) {
+  return (
+    <Panel className="p-8 text-center">
+      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-white/10 bg-white/5 text-cyan-300">
+        {icon}
+      </div>
+      <h3 className="mt-5 text-xl font-black text-white">{title}</h3>
+      <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-slate-300">{text}</p>
+      {action ? <div className="mt-6">{action}</div> : null}
+    </Panel>
+  );
+}
+
+function MetricCard({ icon, label, value, sub, tone = "blue" }) {
+  const tones = {
+    blue: "from-sky-500/18 to-blue-500/8 text-sky-200",
+    emerald: "from-emerald-500/18 to-teal-500/8 text-emerald-200",
+    amber: "from-amber-500/18 to-orange-500/8 text-amber-200",
+    rose: "from-rose-500/18 to-pink-500/8 text-rose-200",
+    slate: "from-white/8 to-white/4 text-slate-200",
+  };
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">{label}</p>
+          <p className="mt-3 break-words text-2xl md:text-[28px] font-black text-white">{value}</p>
+          {sub ? <p className="mt-2 text-xs font-semibold text-slate-400">{sub}</p> : null}
+        </div>
+        <div
+          className={clsx(
+            "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br",
+            tones[tone]
+          )}
+        >
+          {icon}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function TopNav({ currentTab, setCurrentTab, onRefresh, refreshing }) {
+  const tabs = [
+    { key: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={16} /> },
+    { key: "products", label: "Productos", icon: <Boxes size={16} /> },
+    { key: "settings", label: "Ajustes", icon: <Settings size={16} /> },
+  ];
+
+  return (
+    <Panel className="sticky top-3 z-40 p-4 md:p-5">
+      <div className="absolute -left-10 top-6 h-20 w-20 rounded-full bg-sky-400/10 blur-2xl" />
+      <div className="absolute right-0 top-0 h-28 w-28 rounded-full bg-cyan-400/10 blur-3xl" />
+
+      <div className="relative flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-[22px] border border-white/10 bg-white/10 shadow-2xl">
+            <Image src="/logo-unico.png" alt="UnicOs" fill className="object-contain p-2" sizes="56px" priority />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-300">Centro maestro</p>
+            <h1 className="unicos-title mt-1 text-2xl md:text-3xl font-black">
+              <span className="unicos-blue-text">UnicOs</span>
+            </h1>
+            <p className="truncate text-sm text-slate-300">Operación central, visual, financiera y táctica.</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="flex flex-wrap items-center gap-2 rounded-[22px] border border-white/10 bg-white/5 p-1.5 backdrop-blur-xl">
+            {tabs.map((tab) => {
+              const active = currentTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setCurrentTab(tab.key)}
+                  className={clsx(
+                    "inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-black transition",
+                    active
+                      ? "bg-gradient-to-r from-sky-500 to-cyan-400 text-slate-950 shadow-[0_12px_30px_rgba(42,168,255,0.25)]"
+                      : "text-slate-300 hover:bg-white/10 hover:text-white"
+                  )}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <GlassButton variant="secondary" onClick={onRefresh}>
+            <RefreshCcw size={16} className={refreshing ? "animate-spin" : ""} />
+            Actualizar
+          </GlassButton>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function HeaderHero({ orgName, role, email, onLogout }) {
+  return (
+    <Panel className="p-5 md:p-6 overflow-hidden">
+      <div className="absolute -right-8 bottom-0 h-40 w-40 rounded-full bg-cyan-400/10 blur-3xl" />
+      <div className="absolute left-1/3 top-0 h-28 w-28 rounded-full bg-sky-500/10 blur-2xl" />
+
+      <div className="relative grid grid-cols-1 xl:grid-cols-[1.2fr_.8fr] gap-6">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusPill ok tone="blue">Producción conectada</StatusPill>
+            <StatusPill ok tone="emerald">Supabase</StatusPill>
+            <StatusPill ok tone="blue">Stripe</StatusPill>
+            <StatusPill ok tone="emerald">Envia</StatusPill>
+          </div>
+
+          <h2 className="mt-5 text-3xl md:text-4xl font-black text-white leading-[1.05]">
+            Control total de{" "}
+            <span className="unicos-blue-text">{orgName || "la operación"}</span>
+          </h2>
+
+          <p className="mt-4 max-w-3xl text-sm md:text-[15px] leading-relaxed text-slate-300">
+            Panel ejecutivo con lectura real de órdenes, pagos, envíos, catálogo y settings. La idea aquí no es
+            “ver bonito” solamente: es operar Score Store sin meterte a tocar código cada vez.
+          </p>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] font-black text-slate-400">Correo</p>
+              <p className="mt-1 text-sm font-bold text-white break-all">{email || "Sin correo"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] font-black text-slate-400">Rol</p>
+              <p className="mt-1 text-sm font-bold text-white">{safeStr(role || "sin rol").toUpperCase()}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-4 content-start">
+          <Card className="p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-cyan-300">
+                <Sparkles size={18} />
+              </div>
+              <div>
+                <p className="text-sm font-black text-white">Nodo activo</p>
+                <p className="text-xs text-slate-400">Listo para administrar tienda y settings reales.</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-black text-white">Salir de sesión</p>
+                <p className="mt-1 text-xs text-slate-400">Cierra acceso del panel actual.</p>
+              </div>
+              <GlassButton onClick={onLogout} variant="secondary" className="px-3 py-2.5">
+                <Lock size={16} />
+                Salir
+              </GlassButton>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function LoginScreen({ onLogin, loading, error }) {
+  return (
+    <main className="min-h-screen flex items-center justify-center px-4 py-10">
+      <div className="unicos-wrap w-full max-w-6xl">
+        <Panel className="overflow-hidden">
+          <div className="grid grid-cols-1 lg:grid-cols-[1.05fr_.95fr]">
+            <div className="relative p-8 md:p-12 unicos-grid-lines">
+              <div className="unicos-orb unicos-orb-blue h-40 w-40 left-[-40px] top-[-20px]" />
+              <div className="unicos-orb unicos-orb-teal h-36 w-36 right-[10%] bottom-[8%]" />
+
+              <div className="relative max-w-2xl animate-unicos-slide-up">
+                <div className="flex items-center gap-4">
+                  <div className="relative h-20 w-20 overflow-hidden rounded-[26px] border border-white/10 bg-white/10 shadow-2xl animate-unicos-float">
+                    <Image src="/logo-unico.png" alt="UnicOs" fill className="object-contain p-3" sizes="80px" priority />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-[0.24em] text-cyan-300">Control total</p>
+                    <h1 className="mt-1 text-4xl md:text-5xl font-black leading-none">
+                      <span className="unicos-blue-text">UnicOs</span>
+                    </h1>
+                  </div>
+                </div>
+
+                <h2 className="mt-10 text-3xl md:text-5xl font-black leading-[1.02] text-white">
+                  Administra Score Store desde un panel maestro más serio.
+                </h2>
+
+                <p className="mt-5 max-w-xl text-sm md:text-[15px] leading-relaxed text-slate-300">
+                  Esta versión ya está pensada como centro ejecutivo: visual premium, foco en métricas reales,
+                  acceso a catálogo y control directo del contenido operativo de la tienda.
+                </p>
+
+                <div className="mt-8 flex flex-wrap gap-2">
+                  <StatusPill ok tone="blue">Auth real</StatusPill>
+                  <StatusPill ok tone="emerald">Supabase</StatusPill>
+                  <StatusPill ok tone="blue">Store settings</StatusPill>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-8 md:p-12 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] border-l border-white/10">
+              <div className="mx-auto max-w-md animate-unicos-slide-up">
+                <div className="rounded-[28px] border border-white/10 bg-white/5 p-6 md:p-7 shadow-2xl backdrop-blur-xl">
+                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-cyan-300">Acceso seguro</p>
+                  <h3 className="mt-2 text-2xl font-black text-white">Entrar al panel maestro</h3>
+                  <p className="mt-3 text-sm leading-relaxed text-slate-300">
+                    Usa tu acceso real de Supabase. El panel detecta permisos, organización activa y rutas conectadas.
+                  </p>
+
+                  {error ? (
+                    <div className="mt-5 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
+                      {error}
+                    </div>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={onLogin}
+                    className={clsx(
+                      "mt-6 w-full rounded-2xl px-4 py-3.5 text-sm font-black text-white transition",
+                      loading
+                        ? "bg-white/10 border border-white/10"
+                        : "bg-gradient-to-r from-sky-500 via-blue-500 to-cyan-400 shadow-[0_18px_50px_rgba(42,168,255,0.28)] hover:brightness-110"
+                    )}
+                  >
+                    {loading ? "Enviando acceso..." : "Entrar con magic link"}
+                  </button>
+
+                  <p className="mt-4 text-xs leading-relaxed text-slate-400">
+                    Para evitar abuso, Supabase limita solicitudes frecuentes de magic link. Si sale un mensaje de
+                    espera, toca esperar unos segundos y volver a intentarlo.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Panel>
+      </div>
+    </main>
+  );
+}
+
 function FinanceSummary({ token, orgId, role }) {
-  const [state, setState] = useState({
-    loading: true,
-    error: "",
-    data: null,
-  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [data, setData] = useState(null);
+
+  const canView = ["owner", "admin", "marketing"].includes(safeStr(role).toLowerCase());
 
   const load = useCallback(async () => {
-    if (!token || !orgId) return;
+    if (!token || !orgId || !canView) {
+      setLoading(false);
+      return;
+    }
+
     try {
-      setState({ loading: true, error: "", data: null });
+      setLoading(true);
+      setError("");
+
       const res = await fetch(`/api/stripe/summary?org_id=${encodeURIComponent(orgId)}&days=30`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.ok) throw new Error(data?.error || "No se pudo cargar resumen financiero.");
-      setState({ loading: false, error: "", data });
+
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload?.ok) throw new Error(payload?.error || "No se pudo leer el resumen financiero.");
+
+      setData(payload);
     } catch (e) {
-      setState({ loading: false, error: String(e?.message || e), data: null });
+      setError(String(e?.message || e));
+    } finally {
+      setLoading(false);
     }
-  }, [token, orgId]);
+  }, [token, orgId, canView]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  if (!["owner", "admin", "marketing"].includes(safeStr(role).toLowerCase())) return null;
+  if (!canView) return null;
 
-  if (state.loading) {
+  if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <Card key={i} className="p-5 animate-pulse">
-            <div className="h-3 w-24 rounded bg-slate-200" />
-            <div className="mt-4 h-8 w-40 rounded bg-slate-200" />
-            <div className="mt-3 h-3 w-28 rounded bg-slate-200" />
+            <div className="h-3 w-24 rounded bg-white/10" />
+            <div className="mt-4 h-9 w-40 rounded bg-white/10" />
+            <div className="mt-3 h-3 w-28 rounded bg-white/10" />
           </Card>
         ))}
       </div>
     );
   }
 
-  if (state.error) {
+  if (error) {
     return (
       <EmptyState
         icon={<Wallet size={20} />}
         title="No pude cargar el resumen financiero"
-        text={state.error}
+        text={error}
         action={
-          <IconButton type="button" onClick={load} className="bg-slate-900 text-white hover:bg-slate-800">
+          <GlassButton variant="secondary" onClick={load}>
             <RefreshCcw size={16} />
             Reintentar
-          </IconButton>
+          </GlassButton>
         }
       />
     );
   }
 
-  const kpi = state.data?.kpi || {};
+  const kpi = data?.kpi || {};
 
-return (
+  return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
       <MetricCard
         icon={<PiggyBank size={20} />}
@@ -462,7 +537,7 @@ return (
         icon={<Wallet size={20} />}
         label="Ganancia"
         value={money(kpi.visible_profit_mxn)}
-        sub="Lectura simple del panel"
+        sub="Lectura ejecutiva"
         tone="emerald"
       />
     </div>
@@ -474,15 +549,15 @@ function DashboardView({ token, orgId, role }) {
   const [error, setError] = useState("");
   const [orders, setOrders] = useState([]);
   const [enviaSummary, setEnviaSummary] = useState(null);
-  const mountedRef = useRef(true);
 
   const load = useCallback(async () => {
     if (!supabase || !orgId) return;
+
     try {
       setLoading(true);
       setError("");
 
-      const { data: orders, error: ordersErr } = await supabase
+      const { data: ordersData, error: ordersErr } = await supabase
         .from("orders")
         .select("id, amount_total_mxn, stripe_session_id, status, created_at, org_id, organization_id")
         .or(`org_id.eq.${orgId},organization_id.eq.${orgId}`)
@@ -497,37 +572,31 @@ function DashboardView({ token, orgId, role }) {
         const res = await fetch(`/api/envia/summary?org_id=${encodeURIComponent(orgId)}&days=30`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok && data?.ok) enviaData = data;
+        const payload = await res.json().catch(() => ({}));
+        if (res.ok && payload?.ok) enviaData = payload;
       } catch {}
 
-      if (!mountedRef.current) return;
-      setOrders(Array.isArray(orders) ? orders : []);
+      setOrders(Array.isArray(ordersData) ? ordersData : []);
       setEnviaSummary(enviaData);
     } catch (e) {
-      if (!mountedRef.current) return;
       setError(String(e?.message || e));
     } finally {
-      if (mountedRef.current) setLoading(false);
+      setLoading(false);
     }
   }, [orgId, token]);
 
   useEffect(() => {
-    mountedRef.current = true;
     load();
-    return () => {
-      mountedRef.current = false;
-    };
   }, [load]);
 
   const totalSales = useMemo(
-    () => (orders || []).reduce((acc, o) => acc + safeNum(o?.amount_total_mxn, 0), 0),
+    () => orders.reduce((acc, row) => acc + safeNum(row?.amount_total_mxn, 0), 0),
     [orders]
   );
 
-  const totalOrders = orders?.length || 0;
-  const fulfilled = (orders || []).filter((o) => safeStr(o?.status).toLowerCase() === "fulfilled").length;
-  const paid = (orders || []).filter((o) => safeStr(o?.status).toLowerCase() === "paid").length;
+  const totalOrders = orders.length;
+  const fulfilledCount = orders.filter((o) => safeStr(o?.status).toLowerCase() === "fulfilled").length;
+  const paidCount = orders.filter((o) => safeStr(o?.status).toLowerCase() === "paid").length;
 
   if (loading) return <LoadingShell label="Leyendo órdenes, pagos y envíos..." />;
 
@@ -538,10 +607,10 @@ function DashboardView({ token, orgId, role }) {
         title="No pude cargar el dashboard"
         text={error}
         action={
-          <IconButton type="button" onClick={load} className="bg-slate-900 text-white hover:bg-slate-800">
+          <GlassButton variant="secondary" onClick={load}>
             <RefreshCcw size={16} />
             Reintentar
-          </IconButton>
+          </GlassButton>
         }
       />
     );
@@ -549,11 +618,16 @@ function DashboardView({ token, orgId, role }) {
 
   return (
     <div className="space-y-5">
-      <SectionTitle
+      <SectionHeading
         eyebrow="Vista general"
-        title="Control operativo en tiempo real"
-        text="Aquí ves ventas, pagos, envíos y estado general sin tocar código."
-        action={<HelpTip title="Dashboard" text="Este bloque resume lo más importante del negocio con datos reales: ventas, volumen, envíos y actividad reciente." />}
+        title="Operación conectada en tiempo real"
+        text="Aquí ves el resumen ejecutivo de la tienda, con datos reales de órdenes, pagos, envíos y estado operativo."
+        action={
+          <HelpTip
+            title="Dashboard ejecutivo"
+            text="Este bloque centraliza la lectura de métricas sin tocar código: ventas, comisiones, envíos y órdenes recientes."
+          />
+        }
       />
 
       <FinanceSummary token={token} orgId={orgId} role={role} />
@@ -562,14 +636,14 @@ function DashboardView({ token, orgId, role }) {
         <MetricCard
           icon={<Package size={20} />}
           label="Pedidos pagados"
-          value={String(paid)}
-          sub="Listos para seguir flujo"
+          value={String(paidCount)}
+          sub="Pendientes de flujo posterior"
           tone="blue"
         />
         <MetricCard
           icon={<BadgeCheck size={20} />}
           label="Pedidos enviados"
-          value={String(fulfilled)}
+          value={String(fulfilledCount)}
           sub="Marcados como fulfilled"
           tone="emerald"
         />
@@ -577,25 +651,30 @@ function DashboardView({ token, orgId, role }) {
           icon={<Activity size={20} />}
           label="Pedidos totales"
           value={String(totalOrders)}
-          sub="Ventana actual cargada"
+          sub="Ventana cargada"
           tone="slate"
         />
         <MetricCard
           icon={<Truck size={20} />}
-          label="Envíos"
+          label="Eventos de envío"
           value={String(safeNum(enviaSummary?.summary?.shipments_count, 0))}
-          sub={enviaSummary?.summary?.last_shipment_at ? `Último: ${shortDateTime(enviaSummary.summary.last_shipment_at)}` : "Sin últimos movimientos"}
+          sub={
+            enviaSummary?.summary?.last_shipment_at
+              ? `Último: ${shortDateTime(enviaSummary.summary.last_shipment_at)}`
+              : "Sin movimientos recientes"
+          }
           tone="amber"
         />
       </div>
-<div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <Card className="xl:col-span-2 p-5">
+
+      <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_.8fr] gap-5">
+        <Panel className="p-5 md:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-[0.18em] font-black text-slate-500">Actividad reciente</p>
-              <h3 className="mt-1 text-lg font-black tracking-tight text-slate-900">Últimos pedidos</h3>
+              <p className="text-[11px] uppercase tracking-[0.18em] font-black text-slate-400">Actividad reciente</p>
+              <h3 className="mt-2 text-xl font-black text-white">Últimos pedidos</h3>
             </div>
-            <div className="text-sm font-black text-slate-900">{compactMoney(totalSales)}</div>
+            <div className="text-sm font-black text-cyan-200">{compactMoney(totalSales)}</div>
           </div>
 
           {!orders.length ? (
@@ -608,9 +687,9 @@ function DashboardView({ token, orgId, role }) {
             </div>
           ) : (
             <div className="mt-5 overflow-x-auto">
-              <table className="w-full min-w-[640px]">
+              <table className="w-full min-w-[680px]">
                 <thead>
-                  <tr className="text-left text-xs uppercase tracking-[0.16em] text-slate-500">
+                  <tr className="text-left text-[11px] uppercase tracking-[0.16em] text-slate-400">
                     <th className="pb-3 font-black">Pedido</th>
                     <th className="pb-3 font-black">Estado</th>
                     <th className="pb-3 font-black">Monto</th>
@@ -618,24 +697,23 @@ function DashboardView({ token, orgId, role }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.slice(0, 12).map((o) => {
-                    const status = safeStr(o?.status).toLowerCase();
-                    const ok = status === "fulfilled";
+                  {orders.slice(0, 12).map((row) => {
+                    const status = safeStr(row?.status).toLowerCase();
+                    const statusClass =
+                      status === "fulfilled"
+                        ? "bg-emerald-500/14 text-emerald-200"
+                        : "bg-sky-500/14 text-sky-200";
+
                     return (
-                      <tr key={o.id} className="border-t border-slate-100">
-                        <td className="py-4 text-sm font-black text-slate-900">{safeStr(o.id).slice(0, 8)}...</td>
+                      <tr key={row.id} className="border-t border-white/6">
+                        <td className="py-4 text-sm font-black text-white">{safeStr(row.id).slice(0, 8)}...</td>
                         <td className="py-4">
-                          <span
-                            className={clsx(
-                              "inline-flex rounded-full px-3 py-1 text-xs font-black",
-                              ok ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"
-                            )}
-                          >
+                          <span className={clsx("inline-flex rounded-full px-3 py-1 text-xs font-black", statusClass)}>
                             {status || "—"}
                           </span>
                         </td>
-                        <td className="py-4 text-sm font-black text-slate-900">{money(o?.amount_total_mxn)}</td>
-                        <td className="py-4 text-sm text-slate-500">{shortDateTime(o?.created_at)}</td>
+                        <td className="py-4 text-sm font-black text-white">{money(row?.amount_total_mxn)}</td>
+                        <td className="py-4 text-sm text-slate-400">{shortDateTime(row?.created_at)}</td>
                       </tr>
                     );
                   })}
@@ -643,31 +721,31 @@ function DashboardView({ token, orgId, role }) {
               </table>
             </div>
           )}
-        </Card>
+        </Panel>
 
-        <Card className="p-5">
-          <p className="text-xs uppercase tracking-[0.18em] font-black text-slate-500">Lectura rápida</p>
-          <h3 className="mt-1 text-lg font-black tracking-tight text-slate-900">Salud del sistema</h3>
+        <Panel className="p-5 md:p-6">
+          <p className="text-[11px] uppercase tracking-[0.18em] font-black text-slate-400">Salud del sistema</p>
+          <h3 className="mt-2 text-xl font-black text-white">Lectura rápida</h3>
 
           <div className="mt-5 space-y-3">
-            <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-4">
-              <p className="text-sm font-black text-slate-900">Supabase</p>
-              <p className="mt-1 text-sm text-slate-500">Conexión activa para auth, órdenes, productos y settings.</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-4">
-              <p className="text-sm font-black text-slate-900">Stripe</p>
-              <p className="mt-1 text-sm text-slate-500">Comisiones y pagos listos para leerse desde el panel.</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-4">
-              <p className="text-sm font-black text-slate-900">Envia</p>
-              <p className="mt-1 text-sm text-slate-500">Resumen operativo conectado para seguimiento de envíos.</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-4">
-              <p className="text-sm font-black text-slate-900">Permisos</p>
-              <p className="mt-1 text-sm text-slate-500">Rol actual detectado: {safeStr(role || "sin rol").toUpperCase()}.</p>
-            </div>
+            <Card className="p-4">
+              <p className="text-sm font-black text-white">Supabase</p>
+              <p className="mt-1 text-sm text-slate-400">Conexión lista para auth, settings, productos y órdenes.</p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-sm font-black text-white">Stripe</p>
+              <p className="mt-1 text-sm text-slate-400">Resumen financiero y comisiones visibles desde el panel.</p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-sm font-black text-white">Envia</p>
+              <p className="mt-1 text-sm text-slate-400">Seguimiento y resumen operativo de envíos conectado.</p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-sm font-black text-white">Rol actual</p>
+              <p className="mt-1 text-sm text-slate-400">{safeStr(role || "sin rol").toUpperCase()}</p>
+            </Card>
           </div>
-        </Card>
+        </Panel>
       </div>
     </div>
   );
@@ -681,6 +759,7 @@ function ProductsView({ orgId }) {
 
   const load = useCallback(async () => {
     if (!supabase || !orgId) return;
+
     try {
       setLoading(true);
       setError("");
@@ -707,25 +786,29 @@ function ProductsView({ orgId }) {
   }, [load]);
 
   const filtered = useMemo(() => {
-    const term = safeStr(q).toLowerCase().trim();
+    const term = safeStr(q).trim().toLowerCase();
     if (!term) return rows;
-    return rows.filter((r) =>
-      [r?.name, r?.sku, r?.section_id, r?.sub_section].some((x) => safeStr(x).toLowerCase().includes(term))
+
+    return rows.filter((row) =>
+      [row?.name, row?.sku, row?.section_id, row?.sub_section].some((value) =>
+        safeStr(value).toLowerCase().includes(term)
+      )
     );
   }, [rows, q]);
-if (loading) return <LoadingShell label="Leyendo productos reales..." />;
+
+  if (loading) return <LoadingShell label="Leyendo catálogo real..." />;
 
   if (error) {
     return (
       <EmptyState
-        icon={<Package size={20} />}
+        icon={<Boxes size={20} />}
         title="No pude cargar productos"
         text={error}
         action={
-          <IconButton type="button" onClick={load} className="bg-slate-900 text-white hover:bg-slate-800">
+          <GlassButton variant="secondary" onClick={load}>
             <RefreshCcw size={16} />
             Reintentar
-          </IconButton>
+          </GlassButton>
         }
       />
     );
@@ -733,29 +816,34 @@ if (loading) return <LoadingShell label="Leyendo productos reales..." />;
 
   return (
     <div className="space-y-5">
-      <SectionTitle
+      <SectionHeading
         eyebrow="Catálogo"
         title="Productos conectados"
-        text="Vista de catálogo real enlazada a Supabase para revisar precio, stock y estado."
-        action={<HelpTip title="Productos" text="Aquí se listan los productos reales detectados para la organización activa. Sirve para revisión rápida sin editar código." />}
+        text="Vista real de productos enlazados a Supabase. Aquí revisas stock, precio, actividad y orden visual."
+        action={
+          <HelpTip
+            title="Catálogo real"
+            text="Se consulta directo la tabla products usando compatibilidad org_id / organization_id para no perder registros."
+          />
+        }
       />
 
-      <Card className="p-4 md:p-5">
-        <div className="flex flex-col md:flex-row md:items-center gap-3">
+      <Panel className="p-5 md:p-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <div className="relative flex-1">
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Buscar por nombre, SKU o sección"
-              className="w-full rounded-2xl border border-slate-200 bg-white pl-11 pr-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+              className="unicos-input pl-11"
             />
           </div>
 
-          <IconButton type="button" onClick={load} className="bg-white text-slate-800 ring-1 ring-slate-200 hover:bg-slate-50">
+          <GlassButton variant="secondary" onClick={load}>
             <RefreshCcw size={16} />
             Actualizar
-          </IconButton>
+          </GlassButton>
         </div>
 
         {!filtered.length ? (
@@ -767,10 +855,10 @@ if (loading) return <LoadingShell label="Leyendo productos reales..." />;
             />
           </div>
         ) : (
-          <div className="mt-5 overflow-x-auto">
-            <table className="w-full min-w-[900px]">
+          <div className="mt-6 overflow-x-auto">
+            <table className="w-full min-w-[920px]">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-[0.16em] text-slate-500">
+                <tr className="text-left text-[11px] uppercase tracking-[0.16em] text-slate-400">
                   <th className="pb-3 font-black">Producto</th>
                   <th className="pb-3 font-black">SKU</th>
                   <th className="pb-3 font-black">Precio</th>
@@ -780,40 +868,42 @@ if (loading) return <LoadingShell label="Leyendo productos reales..." />;
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
-                  <tr key={r.id} className="border-t border-slate-100">
+                {filtered.map((row) => (
+                  <tr key={row.id} className="border-t border-white/6">
                     <td className="py-4">
                       <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 rounded-2xl bg-slate-100 ring-1 ring-slate-200 overflow-hidden shrink-0">
-                          {r?.image_url ? (
-                            <img src={r.image_url} alt={r?.name || "Producto"} className="h-full w-full object-cover" />
+                        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+                          {row?.image_url ? (
+                            <img src={row.image_url} alt={row?.name || "Producto"} className="h-full w-full object-cover" />
                           ) : (
-                            <div className="h-full w-full flex items-center justify-center text-slate-400">
+                            <div className="flex h-full w-full items-center justify-center text-slate-400">
                               <Package size={18} />
                             </div>
                           )}
                         </div>
                         <div>
-                          <p className="text-sm font-black text-slate-900">{safeStr(r?.name, "Sin nombre")}</p>
-                          <p className="text-xs text-slate-500">Rank: {safeNum(r?.rank, 0)}</p>
+                          <p className="text-sm font-black text-white">{safeStr(row?.name, "Sin nombre")}</p>
+                          <p className="text-xs text-slate-400">Rank: {safeNum(row?.rank, 0)}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="py-4 text-sm font-semibold text-slate-600">{safeStr(r?.sku, "—")}</td>
-                    <td className="py-4 text-sm font-black text-slate-900">{money(r?.price_mxn)}</td>
-                    <td className="py-4 text-sm font-semibold text-slate-600">{safeNum(r?.stock, 0)}</td>
-                    <td className="py-4 text-sm font-semibold text-slate-600">
-                      {safeStr(r?.section_id, "—")}
-                      {r?.sub_section ? ` / ${r.sub_section}` : ""}
+                    <td className="py-4 text-sm font-semibold text-slate-300">{safeStr(row?.sku, "—")}</td>
+                    <td className="py-4 text-sm font-black text-white">{money(row?.price_mxn)}</td>
+                    <td className="py-4 text-sm font-semibold text-slate-300">{safeNum(row?.stock, 0)}</td>
+                    <td className="py-4 text-sm font-semibold text-slate-300">
+                      {safeStr(row?.section_id, "—")}
+                      {row?.sub_section ? ` / ${row.sub_section}` : ""}
                     </td>
                     <td className="py-4">
                       <span
                         className={clsx(
                           "inline-flex rounded-full px-3 py-1 text-xs font-black",
-                          r?.is_active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
+                          row?.is_active
+                            ? "bg-emerald-500/14 text-emerald-200"
+                            : "bg-white/10 text-slate-300"
                         )}
                       >
-                        {r?.is_active ? "Sí" : "No"}
+                        {row?.is_active ? "Sí" : "No"}
                       </span>
                     </td>
                   </tr>
@@ -822,7 +912,7 @@ if (loading) return <LoadingShell label="Leyendo productos reales..." />;
             </table>
           </div>
         )}
-      </Card>
+      </Panel>
     </div>
   );
 }
@@ -830,48 +920,62 @@ if (loading) return <LoadingShell label="Leyendo productos reales..." />;
 function SettingsShortcut() {
   return (
     <div className="space-y-5">
-      <SectionTitle
+      <SectionHeading
         eyebrow="Ajustes"
         title="Centro de configuración"
-        text="Accesos rápidos para editar el comportamiento y el contenido visible de la tienda."
-        action={<HelpTip title="Ajustes" text="Desde aquí puedes saltar a páginas de configuración específicas sin tocar archivos manualmente." />}
+        text="Accesos rápidos para operar Score Store desde UnicOs sin tocar archivos manualmente."
+        action={
+          <HelpTip
+            title="Settings conectados"
+            text="Aquí saltas al panel especializado de site_settings, que sí controla contenido real consumido por la tienda."
+          />
+        }
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <Card className="p-5">
-          <p className="text-xs uppercase tracking-[0.18em] font-black text-blue-700">Score Store</p>
-          <h3 className="mt-1 text-lg font-black tracking-tight text-slate-900">Contenido y datos de tienda</h3>
-          <p className="mt-2 text-sm text-slate-500">
-            Edita hero, contacto, SEO, portada, gallery y nota de footer desde el panel dedicado.
-          </p>
+        <Panel className="p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-cyan-300">Score Store</p>
+              <h3 className="mt-2 text-2xl font-black text-white">Contenido y datos reales</h3>
+              <p className="mt-3 text-sm leading-relaxed text-slate-300">
+                Hero, promo, contacto, redes, portada, notas operativas y otros datos visibles del storefront.
+              </p>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-cyan-300">
+              <Store size={18} />
+            </div>
+          </div>
+
           <a
             href="/scorestore-settings"
-            className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white hover:bg-slate-800"
+            className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-sky-500 via-blue-500 to-cyan-400 px-4 py-3 text-sm font-black text-slate-950 shadow-[0_18px_50px_rgba(42,168,255,0.25)] hover:brightness-110"
           >
             Abrir ajustes
-            <ExternalLink size={16} />
+            <ArrowRight size={16} />
           </a>
-        </Card>
+        </Panel>
 
-        <Card className="p-5">
-          <p className="text-xs uppercase tracking-[0.18em] font-black text-blue-700">Estado actual</p>
-          <h3 className="mt-1 text-lg font-black tracking-tight text-slate-900">Producción conectada</h3>
-          <p className="mt-2 text-sm text-slate-500">
-            El panel ya está enlazado a autenticación, productos, órdenes, pagos y envíos con lectura real.
+        <Panel className="p-6">
+          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-cyan-300">Estado actual</p>
+          <h3 className="mt-2 text-2xl font-black text-white">Producción conectada</h3>
+          <p className="mt-3 text-sm leading-relaxed text-slate-300">
+            El panel ya está orientado a flujo real: auth, catálogo, órdenes, finanzas, envíos y settings conectados.
           </p>
+
           <div className="mt-5 flex flex-wrap gap-2">
-            <HealthPill ok label="Auth" />
-            <HealthPill ok label="Store settings" />
-            <HealthPill ok label="Orders" />
-            <HealthPill ok label="Products" />
+            <StatusPill ok tone="blue">Auth</StatusPill>
+            <StatusPill ok tone="emerald">Site settings</StatusPill>
+            <StatusPill ok tone="blue">Products</StatusPill>
+            <StatusPill ok tone="emerald">Orders</StatusPill>
           </div>
-        </Card>
+        </Panel>
       </div>
     </div>
   );
 }
 
-export default function UnicOsHomePage() {
+export default function Page() {
   const mounted = useMounted();
 
   const [checking, setChecking] = useState(true);
@@ -885,9 +989,9 @@ export default function UnicOsHomePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [currentTab, setCurrentTab] = useState("dashboard");
 
-const loadSessionAndOrg = useCallback(async () => {
-    if (!supabase) {
-      setGlobalError("Faltan NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+  const loadSessionAndOrg = useCallback(async () => {
+    if (!SUPABASE_CONFIGURED || !supabase) {
+      setGlobalError("Faltan variables públicas de Supabase para operar UnicOs.");
       setChecking(false);
       return;
     }
@@ -909,94 +1013,72 @@ const loadSessionAndOrg = useCallback(async () => {
         setActiveOrgId("");
         setActiveOrgName("");
         setRole("");
-        setChecking(false);
         return;
       }
 
       setAccessToken(session.access_token);
 
-      const token = session.access_token;
-      const storedOrg = mounted ? safeStr(window.localStorage.getItem("unicos.org_id"), "") : "";
+      const storedOrg =
+        typeof window !== "undefined" ? safeStr(window.localStorage.getItem("unicos.org_id"), "") : "";
 
-      const resolveOrg = async () => {
-        const whoRes = await fetch("/api/me", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const who = await whoRes.json().catch(() => ({}));
-        if (!whoRes.ok || !who?.ok) throw new Error(who?.error || "No autorizado.");
+      const whoRes = await fetch("/api/me", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
 
-        const email = safeStr(who.email || "");
-        if (email) setSessionEmail(email);
+      const who = await whoRes.json().catch(() => ({}));
+      if (!whoRes.ok || !who?.ok) throw new Error(who?.error || "No autorizado.");
 
-        const orgs = Array.isArray(who?.organizations) ? who.organizations : [];
-        let targetOrg = storedOrg || String(who?.organization_id || "").trim();
+      const email = safeStr(who.email || "");
+      if (email) setSessionEmail(email);
 
-        if (!targetOrg && orgs.length) {
-          targetOrg = String(orgs[0]?.organization_id || "").trim();
-        }
+      const organizations = Array.isArray(who?.organizations) ? who.organizations : [];
+      let targetOrg = storedOrg || safeStr(who?.organization_id || "");
 
-        if (!targetOrg) {
-          const { data: rows, error } = await supabase
-            .from("admin_users")
-            .select("organization_id, org_id, role, is_active, email")
-            .eq("is_active", true)
-            .ilike("email", email)
-            .order("created_at", { ascending: true })
-            .limit(10);
+      if (!targetOrg && organizations.length) {
+        targetOrg = safeStr(organizations[0]?.organization_id || "");
+      }
 
-          if (error) throw error;
-          const row = (rows || []).find((x) => x?.organization_id || x?.org_id);
-          targetOrg = row?.organization_id || row?.org_id || "";
-          if (!targetOrg) throw new Error("No encontramos una organización ligada a este acceso.");
-        }
+      if (!targetOrg) {
+        targetOrg = SCORE_ORG_ID;
+      }
 
-        let orgName = ORG_LABELS[targetOrg] || "Organización";
-        try {
-          const { data: orgRow } = await supabase
-            .from("organizations")
-            .select("id,name")
-            .eq("id", targetOrg)
-            .limit(1)
-            .maybeSingle();
-          if (orgRow?.name) orgName = orgRow.name;
-        } catch {}
+      let orgName = safeStr(
+        organizations.find((org) => safeStr(org?.organization_id) === targetOrg)?.organization_name || ""
+      );
 
-        let adminRow = null;
+      if (!orgName) {
+        const { data: orgRow } = await supabase
+          .from("organizations")
+          .select("id,name")
+          .eq("id", targetOrg)
+          .limit(1)
+          .maybeSingle();
 
-        const q1 = await supabase
-          .from("admin_users")
-          .select("id, role, is_active, email, user_id, organization_id, org_id")
-          .eq("is_active", true)
-          .or(`organization_id.eq.${targetOrg},org_id.eq.${targetOrg}`)
-          .or(`email.ilike.${email},user_id.eq.${who.id}`)
-          .limit(10);
+        if (orgRow?.name) orgName = orgRow.name;
+      }
 
-        if (!q1.error && Array.isArray(q1.data)) {
-          adminRow =
-            q1.data.find((r) => String(r?.organization_id || r?.org_id || "") === String(targetOrg)) ||
-            q1.data[0] ||
-            null;
-        }
+      const adminRole =
+        safeStr(
+          organizations.find((org) => safeStr(org?.organization_id) === targetOrg)?.role || who?.role || ""
+        ).toLowerCase() || "support";
 
-        if (!adminRow?.role) {
-          throw new Error("No encontramos permisos activos para esta organización.");
-        }
+      setActiveOrgId(targetOrg);
+      setActiveOrgName(orgName || "Organización");
+      setRole(adminRole);
 
-        setActiveOrgId(targetOrg);
-        setActiveOrgName(orgName);
-        setRole(safeStr(adminRow.role).toLowerCase());
-        if (mounted) window.localStorage.setItem("unicos.org_id", targetOrg);
-      };
-
-      await resolveOrg();
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("unicos.org_id", targetOrg);
+      }
     } catch (e) {
       setGlobalError(String(e?.message || e));
     } finally {
       setChecking(false);
     }
-  }, [mounted]);
+  }, []);
 
   useEffect(() => {
+    if (!mounted) return;
+
     loadSessionAndOrg();
 
     if (!supabase) return;
@@ -1008,15 +1090,16 @@ const loadSessionAndOrg = useCallback(async () => {
     });
 
     return () => subscription?.unsubscribe?.();
-  }, [loadSessionAndOrg]);
+  }, [mounted, loadSessionAndOrg]);
 
   const handleLogin = useCallback(async () => {
     if (!supabase) return;
+
     try {
       setAuthLoading(true);
       setGlobalError("");
 
-      const email = window.prompt("Escribe tu correo autorizado de UnicOs:");
+      const email = window.prompt("Escribe tu correo autorizado para entrar a UnicOs:");
       if (!email) return;
 
       const origin =
@@ -1032,7 +1115,8 @@ const loadSessionAndOrg = useCallback(async () => {
       });
 
       if (error) throw error;
-      alert("Te mandé tu magic link al correo.");
+
+      alert("Te mandé el magic link a tu correo.");
     } catch (e) {
       setGlobalError(String(e?.message || e));
     } finally {
@@ -1044,9 +1128,11 @@ const loadSessionAndOrg = useCallback(async () => {
     try {
       if (!supabase) return;
       await supabase.auth.signOut();
+
       if (typeof window !== "undefined") {
         window.localStorage.removeItem("unicos.org_id");
       }
+
       setAccessToken("");
       setSessionEmail("");
       setActiveOrgId("");
@@ -1067,56 +1153,50 @@ const loadSessionAndOrg = useCallback(async () => {
     }
   }, [loadSessionAndOrg]);
 
-  const openSettings = useCallback(() => {
-    setCurrentTab("settings");
-  }, []);
-
   if (!mounted) return null;
 
-  if (!SUPABASE_READY) {
+  if (!SUPABASE_CONFIGURED) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 py-8">
-        <div className="mx-auto max-w-3xl">
+      <main className="min-h-screen flex items-center justify-center px-4">
+        <div className="unicos-wrap max-w-4xl">
           <EmptyState
             icon={<Shield size={20} />}
             title="Falta configuración pública de Supabase"
-            text="Agrega NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY para que UnicOs pueda operar."
+            text="Agrega NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY o NEXT_PUBLIC_SUPABASE_ANON_KEY para operar el panel."
           />
         </div>
-      </div>
+      </main>
     );
   }
 
   if (checking) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 py-6 md:py-8">
-        <div className="mx-auto max-w-7xl">
+      <main className="min-h-screen px-4 py-8">
+        <div className="unicos-wrap">
           <LoadingShell label="Validando acceso, organización y permisos..." />
         </div>
-      </div>
+      </main>
     );
   }
 
   if (!accessToken || !activeOrgId) {
-    return <LoginCard onLogin={handleLogin} loading={authLoading} error={globalError} />;
+    return <LoginScreen onLogin={handleLogin} loading={authLoading} error={globalError} />;
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto max-w-7xl px-4 py-4 md:px-6 md:py-6 space-y-4">
-        <TopShell
-          orgName={activeOrgName}
-          onRefresh={handleRefresh}
-          refreshing={refreshing}
-          onOpenSettings={openSettings}
+    <main className="min-h-screen px-4 py-4 md:py-6">
+      <div className="unicos-wrap space-y-4 md:space-y-5">
+        <TopNav
           currentTab={currentTab}
           setCurrentTab={setCurrentTab}
+          onRefresh={handleRefresh}
+          refreshing={refreshing}
         />
 
-        <HeaderBar orgName={activeOrgName} role={role} email={sessionEmail} onLogout={handleLogout} />
+        <HeaderHero orgName={activeOrgName} role={role} email={sessionEmail} onLogout={handleLogout} />
 
         {globalError ? (
-          <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 ring-1 ring-rose-200">
+          <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200">
             {globalError}
           </div>
         ) : null}
