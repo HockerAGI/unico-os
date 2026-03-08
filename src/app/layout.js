@@ -8,16 +8,17 @@ export const viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#081322",
+  themeColor: "#0b1f3b",
 };
 
 export const metadata = {
   metadataBase: new URL("https://unicoapps.netlify.app"),
   title: {
-    default: "UnicOs Admin",
+    default: "UnicOs",
     template: "%s | UnicOs",
   },
-  description: "Centro maestro para administrar Score Store y operaciones conectadas desde UnicOs.",
+  description:
+    "Centro de mando de Único para administrar operación, contenido, campañas, seguimiento y sitios conectados desde un solo panel.",
   applicationName: "UnicOs",
   manifest: "/manifest.json",
   icons: {
@@ -33,8 +34,9 @@ export const metadata = {
     title: "UnicOs",
   },
   openGraph: {
-    title: "UnicOs Admin",
-    description: "Centro maestro para administrar Score Store y operaciones conectadas desde UnicOs.",
+    title: "UnicOs",
+    description:
+      "Centro de mando de Único para administrar operación, contenido, campañas, seguimiento y sitios conectados desde un solo panel.",
     url: "https://unicoapps.netlify.app",
     siteName: "UnicOs",
     type: "website",
@@ -50,8 +52,9 @@ export const metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "UnicOs Admin",
-    description: "Centro maestro para administrar Score Store y operaciones conectadas desde UnicOs.",
+    title: "UnicOs",
+    description:
+      "Centro de mando de Único para administrar operación, contenido, campañas, seguimiento y sitios conectados desde un solo panel.",
     images: ["/logo-unico.png"],
   },
 };
