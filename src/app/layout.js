@@ -14,7 +14,7 @@ export const viewport = {
 export const metadata = {
   metadataBase: new URL("https://unicoapps.netlify.app"),
   title: "UnicOs Admin",
-  description: "Central Command System para Score Store",
+  description: "Centro de control de UnicOs para administrar operaciones, contenido y tiendas conectadas.",
   manifest: "/manifest.json",
   icons: {
     icon: [
