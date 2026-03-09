@@ -53,6 +53,9 @@ const securityHeaders = [
 const htmlHeaders = [
   ...securityHeaders,
   { key: "Content-Type", value: "text/html; charset=utf-8" },
+  { key: "Cache-Control", value: "no-store, no-cache, must-revalidate, proxy-revalidate" },
+  { key: "Pragma", value: "no-cache" },
+  { key: "Expires", value: "0" },
 ];
 
 const nextConfig = {
@@ -69,6 +72,7 @@ const nextConfig = {
       { source: "/", headers: htmlHeaders },
       { source: "/auth/callback", headers: htmlHeaders },
       { source: "/scorestore-settings", headers: htmlHeaders },
+      { source: "/:path((?!_next/|api/|.*\\..*).*)", headers: htmlHeaders },
       { source: "/:path*", headers: securityHeaders },
       {
         source: "/manifest.json",
