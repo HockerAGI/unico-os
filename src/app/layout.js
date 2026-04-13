@@ -2,7 +2,7 @@ import "./globals.css";
 
 const siteUrl =
   process.env.NEXT_PUBLIC_SITE_URL ||
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://unicos-admin.vercel.app");
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://unicoadmin.vercel.app");
 
 export const metadata = {
   metadataBase: new URL(siteUrl),
